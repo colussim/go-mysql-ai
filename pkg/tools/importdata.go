@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -85,9 +86,10 @@ func ImportData(db *sql.DB, pathologyFile string) error {
 	}
 
 	for _, pathologie := range pathologyList.Pathologies {
-		url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=10", pathologie)
+		encodedPathologie := url.QueryEscape(pathologie)
+		url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=10", encodedPathologie)
 
-		fmt.Println("URL:", url)
+		//fmt.Println("URL:", url)
 		resp, err := http.Get(url)
 		if err != nil {
 			return fmt.Errorf("Erreur lors de la requête à l'API pour %s : %w", pathologie, err)
