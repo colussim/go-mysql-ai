@@ -86,6 +86,8 @@ func ImportData(db *sql.DB, pathologyFile string) error {
 
 	for _, pathologie := range pathologyList.Pathologies {
 		url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=10", pathologie)
+
+		fmt.Println("URL:", url)
 		resp, err := http.Get(url)
 		if err != nil {
 			return fmt.Errorf("Erreur lors de la requête à l'API pour %s : %w", pathologie, err)
@@ -99,7 +101,7 @@ func ImportData(db *sql.DB, pathologyFile string) error {
 
 		for _, item := range response.Results {
 			_, err := db.Exec(`
-                INSERT INTO medicationt (
+                INSERT INTO medication (
                     effective_time, purpose, keep_out_of_reach_of_children, 
                     when_using, questions, pregnancy_or_breast_feeding, 
                     storage_and_handling, indications_and_usage, set_id, 
