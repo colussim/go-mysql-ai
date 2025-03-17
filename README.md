@@ -59,4 +59,5 @@ With a simple command-line interface and built-in model support, Ollama makes it
 ## ✅ Ressources
 
 [OpenFDA](https://open.fda.gov/)
+
 [Ollama](https://ollama.com/)
