@@ -87,7 +87,7 @@ func ImportData(db *sql.DB, pathologyFile string) error {
 
 	for _, pathologie := range pathologyList.Pathologies {
 		encodedPathologie := url.QueryEscape(pathologie)
-		url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=10", encodedPathologie)
+		url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathologie)
 
 		//fmt.Println("URL:", url)
 		resp, err := http.Get(url)
