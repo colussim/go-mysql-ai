@@ -1,10 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -140,39 +138,57 @@ func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
 	return embedding, nil
 }
 
-func fetchMedications2(pathology string) (OpenFDAResponse, error) {
-	encodedPathology := url.QueryEscape(pathology)
-	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
-	resp, err := http.Get(url)
-	if err != nil {
-		return OpenFDAResponse{}, fmt.Errorf("❌ Error fetching medications: %w", err)
-	}
-	defer resp.Body.Close()
+func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
+	pathologyEmbedding := generateEmbedding(pathology)
 
-	body, err := io.ReadAll(resp.Body)
+	// Insérer directement le vecteur dans la base de données
+	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
 	if err != nil {
-		return OpenFDAResponse{}, fmt.Errorf("❌ Error reading response body: %w", err)
+		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
 
-	var data OpenFDAResponse
-	if err := json.Unmarshal(body, &data); err != nil {
-		return OpenFDAResponse{}, fmt.Errorf("❌ Error unmarshalling response: %w", err)
+	var pathologyID int
+	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
+	if err != nil {
+		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
 	}
-	return data, nil
+
+	for _, result := range data.Results {
+		if len(result.OpenFDA.BrandName) == 0 {
+			continue
+		}
+		medicament := result.OpenFDA.BrandName[0]
+		text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
+			strings.Join(result.IndicationsAndUsage, " "),
+			strings.Join(result.Purpose, " "),
+			strings.Join(result.OpenFDA.ActiveIngredient, " "),
+			strings.Join(result.DosageAndAdmin, " "))
+		medEmbedding := generateEmbedding(text)
+
+		// Insérer directement le vecteur dans la base de données
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		if err != nil {
+			fmt.Println("❌ Error inserting into medicationv table:", err)
+		}
+	}
+	return nil
 }
 
-func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
+func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
+	var embedding []float64
+	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embedding)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
+	}
+	return embedding, nil
+}
+
+func InsertData2(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	// Generate embedding for the pathology
 	pathologyEmbedding := generateEmbedding(pathology)
 
-	// Convert the embedding to binary format
-	pathologyEmbeddingBinary, err := float64SliceToBinary(pathologyEmbedding)
-	if err != nil {
-		return fmt.Errorf("❌ Error converting pathology embedding to binary: %w", err)
-	}
-
 	// Insert the pathology into the database
-	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingBinary)
+	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -197,43 +213,13 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
-		// Convert the medication embedding to binary format
-		medEmbeddingBinary, err := float64SliceToBinary(medEmbedding)
-		if err != nil {
-			fmt.Println("❌ Error converting medication embedding to binary:", err)
-			continue
-		}
-
 		// Insert the medication into the database
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingBinary)
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
 	}
 	return nil
-}
-
-// Convert a slice of float64 to a binary format ([]byte)
-func float64SliceToBinary(slice []float64) ([]byte, error) {
-	const vectorSize = 768 // Expected size for VECTOR(768)
-	if len(slice) > vectorSize {
-		// Truncate the slice if it's too long
-		slice = slice[:vectorSize]
-	} else if len(slice) < vectorSize {
-		// Pad the slice with zeros if it's too short
-		padding := make([]float64, vectorSize-len(slice))
-		slice = append(slice, padding...)
-	}
-
-	// Convert the slice to binary format
-	buf := new(bytes.Buffer)
-	for _, v := range slice {
-		err := binary.Write(buf, binary.LittleEndian, v)
-		if err != nil {
-			return nil, fmt.Errorf("error writing float64 to binary: %w", err)
-		}
-	}
-	return buf.Bytes(), nil
 }
 
 func initDatabase(db *sql.DB) error {
