@@ -179,6 +179,17 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 
 // Convert a slice of float64 to a binary format ([]byte)
 func float64SliceToBinary(slice []float64) ([]byte, error) {
+	const vectorSize = 768 // Expected size for VECTOR(768)
+	if len(slice) > vectorSize {
+		// Truncate the slice if it's too long
+		slice = slice[:vectorSize]
+	} else if len(slice) < vectorSize {
+		// Pad the slice with zeros if it's too short
+		padding := make([]float64, vectorSize-len(slice))
+		slice = append(slice, padding...)
+	}
+
+	// Convert the slice to binary format
 	buf := new(bytes.Buffer)
 	for _, v := range slice {
 		err := binary.Write(buf, binary.LittleEndian, v)
