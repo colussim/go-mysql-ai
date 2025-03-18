@@ -111,6 +111,42 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	}
 	defer resp.Body.Close()
 
+	// Check if the response status code is 200 (OK)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body) // Read the body for debugging purposes
+		return OpenFDAResponse{}, fmt.Errorf("❌ API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error reading response body: %w", err)
+	}
+
+	var data OpenFDAResponse
+	if err := json.Unmarshal(body, &data); err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error unmarshalling response: %w", err)
+	}
+	return data, nil
+}
+
+func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
+	var embedding []float64
+	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embedding)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
+	}
+	return embedding, nil
+}
+
+func fetchMedications2(pathology string) (OpenFDAResponse, error) {
+	encodedPathology := url.QueryEscape(pathology)
+	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
+	resp, err := http.Get(url)
+	if err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error fetching medications: %w", err)
+	}
+	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return OpenFDAResponse{}, fmt.Errorf("❌ Error reading response body: %w", err)
