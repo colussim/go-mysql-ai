@@ -133,12 +133,6 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
 
-	// Clear the medicationv table
-	_, err = db.Exec("DELETE FROM medicationv")
-	if err != nil {
-		return fmt.Errorf("❌ Error deleting existing data from medicationv table: %w", err)
-	}
-
 	// Fetch the pathology ID
 	var pathologyID int
 	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
