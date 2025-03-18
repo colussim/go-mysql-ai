@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,17 +130,30 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	}
 	return data, nil
 }
+
+// Fonction pour convertir un slice de float64 en bytes
+func float64SliceToBytes(values []float64) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	for _, v := range values {
+		err := binary.Write(buf, binary.LittleEndian, v)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
-	// Convertir le slice en JSON
-	pathologyEmbeddingJSON, err := json.Marshal(pathologyEmbedding)
+	// Convertir le slice en bytes
+	pathologyEmbeddingBytes, err := float64SliceToBytes(pathologyEmbedding)
 	if err != nil {
-		return fmt.Errorf("❌ Error marshalling pathology embedding: %w", err)
+		return fmt.Errorf("❌ Error converting pathology embedding to bytes: %w", err)
 	}
 
-	// Insérer le JSON dans la base de données
-	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingJSON)
+	// Insérer le vecteur en utilisant STRING_TO_VECTOR
+	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, STRING_TO_VECTOR(?))", pathology, pathologyEmbeddingBytes)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -161,14 +176,14 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
-		// Convertir le slice en JSON
-		medEmbeddingJSON, err := json.Marshal(medEmbedding)
+		// Convertir le slice en bytes
+		medEmbeddingBytes, err := float64SliceToBytes(medEmbedding)
 		if err != nil {
-			return fmt.Errorf("❌ Error marshalling medication embedding: %w", err)
+			return fmt.Errorf("❌ Error converting medication embedding to bytes: %w", err)
 		}
 
-		// Insérer le JSON dans la base de données
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingJSON)
+		// Insérer le vecteur en utilisant STRING_TO_VECTOR
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, STRING_TO_VECTOR(?))", medicament, text, pathologyID, medEmbeddingBytes)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
@@ -177,19 +192,21 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 }
 
 func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
-	var embeddingJSON string
-	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embeddingJSON)
+	var embeddingBytes []byte
+	err := db.QueryRow("SELECT CAST(embedding AS BINARY) FROM pathologies WHERE nom = ?", pathology).Scan(&embeddingBytes)
 	if err != nil {
 		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
 	}
 
-	var embedding []float64
-	if err := json.Unmarshal([]byte(embeddingJSON), &embedding); err != nil {
-		return nil, fmt.Errorf("❌ Error unmarshalling embedding: %w", err)
+	// Convertir les bytes en slice de float64
+	embedding := make([]float64, len(embeddingBytes)/8)
+	buf := bytes.NewReader(embeddingBytes)
+	err = binary.Read(buf, binary.LittleEndian, &embedding)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error converting bytes to embedding: %w", err)
 	}
 	return embedding, nil
 }
-
 func InsertData2(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	// Generate embedding for the pathology
 	pathologyEmbedding := generateEmbedding(pathology)
