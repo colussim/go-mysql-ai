@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/colussim/go-mysql-ai/pkg/tools"
@@ -20,7 +21,9 @@ func main() {
 
 	err := tools.RunImport("config/config.json")
 	if err != nil {
-		log.Fatalf("❌ Error loading configuration : %v", err)
+		log.Fatalf("❌ Error Import Data : %v", err)
+		spin.Stop()
+		os.Exit(1)
 	}
 
 	spin.Stop()

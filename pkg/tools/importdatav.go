@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/ollama/ollama-go"
 )
 
 type Config struct {
@@ -42,7 +44,7 @@ type OpenFDAResponse struct {
 }
 
 func LoadConfig(filename string) (*Config, error) {
-	file, err := ioutil.ReadFile(filename)
+	file, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +56,7 @@ func LoadConfig(filename string) (*Config, error) {
 }
 
 func LoadPathologies(filename string) (*Pathologies, error) {
-	file, err := ioutil.ReadFile(filename)
+	file, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -66,42 +68,80 @@ func LoadPathologies(filename string) (*Pathologies, error) {
 }
 
 func generateEmbedding(text string) []float32 {
-	client := ollama.NewClient("")
-	resp, _ := client.GenerateEmbedding("mistral", text)
+
+	// Get the Ollama host from the environment variable or use the default local host
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434" // Default Ollama local server URL
+	}
+
+	// Create a new Ollama client with the local host
+	client := ollama.NewClient(ollamaHost)
+
+	// Use the qwen2.5:0.5b model to generate embeddings
+	resp, err := client.GenerateEmbedding("qwen2.5:0.5b", text)
+	if err != nil {
+		fmt.Println("❌ Error generating embedding:", err)
+		return nil
+	}
+
 	return resp.Vector
 }
 
-func fetchMedications(pathology string) OpenFDAResponse {
-	eencodedPathology := url.QueryEscape(pathology)
+func fetchMedications2(pathology string) OpenFDAResponse {
+	encodedPathology := url.QueryEscape(pathology)
 	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
 	resp, _ := http.Get(url)
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	var data OpenFDAResponse
 	json.Unmarshal(body, &data)
 	return data
 }
 
-func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) {
+func fetchMedications(pathology string) (OpenFDAResponse, error) {
+	encodedPathology := url.QueryEscape(pathology)
+	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
+	resp, err := http.Get(url)
+	if err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error fetching medications: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error reading response body: %w", err)
+	}
+
+	var data OpenFDAResponse
+	if err := json.Unmarshal(body, &data); err != nil {
+		return OpenFDAResponse{}, fmt.Errorf("❌ Error unmarshalling response: %w", err)
+	}
+	return data, nil
+}
+
+func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
 	_, err := db.Exec("DELETE FROM pathologies")
 	if err != nil {
-		return fmt.Errorf("❌ Error deleting existing data from pathologies table : %w", err)
+		return fmt.Errorf("❌ Error deleting existing data from pathologies table: %w", err)
 	}
 
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
 	if err != nil {
-		fmt.Println("❌ Error insert pathologies table:", err)
-		return
+		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
 
-	_, err := db.Exec("DELETE FROM medicationv")
+	_, err = db.Exec("DELETE FROM medicationv")
 	if err != nil {
-		return fmt.Errorf("❌ Error deleting existing data from medicationv table : %w", err)
+		return fmt.Errorf("❌ Error deleting existing data from medicationv table: %w", err)
 	}
 
 	var pathologyID int
-	db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
+	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
+	if err != nil {
+		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
+	}
 
 	for _, result := range data.Results {
 		if len(result.OpenFDA.BrandName) == 0 {
@@ -116,34 +156,42 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) {
 		medEmbedding := generateEmbedding(text)
 		_, err := db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
 		if err != nil {
-			fmt.Println("❌ Error insert medicationv table:", err)
+			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
 	}
+	return nil
 }
 
-func RunImport(configPath string) {
+func RunImport(configPath string) error {
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		fmt.Println("❌ Error reading config file:", err)
-		return
+		return err
 	}
 	pathologies, err := LoadPathologies(config.Pathologie.File)
 	if err != nil {
 		fmt.Println("❌ Error parsing JSON contents of file pathologies:", err)
-		return
+		return err
 	}
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/ai_meds", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		fmt.Println("❌ Error connexion MySQL:", err)
-		return
+		fmt.Println("❌ Error connecting to MySQL:", err)
+		return err
 	}
 	defer db.Close()
 
 	for _, pathology := range pathologies.Pathologies {
-		data := fetchMedications(pathology)
-		InsertData(db, pathology, data)
+		data, err := fetchMedications(pathology)
+		if err != nil {
+			fmt.Println("❌ Error fetching medications for pathology:", pathology, err)
+			continue
+		}
+		err = InsertData(db, pathology, data)
+		if err != nil {
+			fmt.Println("❌ Error inserting data for pathology:", pathology, err)
+		}
 	}
 
-	//fmt.Println("Importation terminée !")
+	return nil
 }

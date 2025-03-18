@@ -26,7 +26,7 @@ type Configuration struct {
 }
 
 // OpenFDAResponse représente la réponse JSON de l'API OpenFDA
-type OpenFDAResponse struct {
+type OpenFDAResponse2 struct {
 	Results []struct {
 		EffectiveTime            string   `json:"effective_time"`
 		Purpose                  []string `json:"purpose"`
@@ -52,7 +52,7 @@ type PathologyList struct {
 	Pathologies []string `json:"pathologies"`
 }
 
-func LoadConfig(filename string) (Configuration, error) {
+func LoadConfig2(filename string) (Configuration, error) {
 	var config Configuration
 
 	data, err := os.ReadFile(filename)
@@ -96,7 +96,7 @@ func ImportData(db *sql.DB, pathologyFile string) error {
 		}
 		defer resp.Body.Close()
 
-		var response OpenFDAResponse
+		var response OpenFDAResponse2
 		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 			return fmt.Errorf("Erreur lors de la décodage de la réponse pour %s : %w", pathologie, err)
 		}
