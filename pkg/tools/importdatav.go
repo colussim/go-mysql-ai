@@ -128,21 +128,17 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	}
 	return data, nil
 }
-
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
-	//fmt.Println(pathologyEmbedding)
-
-	var pathologyEmbeddingArray [896]float64
-	if len(pathologyEmbedding) != 896 {
-		return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(pathologyEmbedding))
+	// Convertir le slice en JSON
+	pathologyEmbeddingJSON, err := json.Marshal(pathologyEmbedding)
+	if err != nil {
+		return fmt.Errorf("❌ Error marshalling pathology embedding: %w", err)
 	}
-	copy(pathologyEmbeddingArray[:], pathologyEmbedding)
 
-	// Insérer directement le vecteur dans la base de données
-	//_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingArray)
+	// Insérer le JSON dans la base de données
+	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingJSON)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -165,16 +161,14 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
-		var medEmbeddingArray [896]float64
-		if len(medEmbedding) != 896 {
-			return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(medEmbedding))
+		// Convertir le slice en JSON
+		medEmbeddingJSON, err := json.Marshal(medEmbedding)
+		if err != nil {
+			return fmt.Errorf("❌ Error marshalling medication embedding: %w", err)
 		}
-		copy(medEmbeddingArray[:], medEmbedding)
 
-		// Insérer directement le vecteur dans la base de données
-		//_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingArray)
-
+		// Insérer le JSON dans la base de données
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingJSON)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
@@ -183,10 +177,15 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 }
 
 func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
-	var embedding []float64
-	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embedding)
+	var embeddingJSON string
+	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embeddingJSON)
 	if err != nil {
 		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
+	}
+
+	var embedding []float64
+	if err := json.Unmarshal([]byte(embeddingJSON), &embedding); err != nil {
+		return nil, fmt.Errorf("❌ Error unmarshalling embedding: %w", err)
 	}
 	return embedding, nil
 }
