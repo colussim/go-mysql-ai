@@ -132,10 +132,17 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
-	fmt.Println(pathologyEmbedding)
+	//fmt.Println(pathologyEmbedding)
+
+	var pathologyEmbeddingArray [768]float64
+	if len(pathologyEmbedding) != 768 {
+		return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(pathologyEmbedding))
+	}
+	copy(pathologyEmbeddingArray[:], pathologyEmbedding)
 
 	// Insérer directement le vecteur dans la base de données
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	//_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingArray)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -158,8 +165,16 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
+		var medEmbeddingArray [768]float64
+		if len(medEmbedding) != 768 {
+			return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(medEmbedding))
+		}
+		copy(medEmbeddingArray[:], medEmbedding)
+
 		// Insérer directement le vecteur dans la base de données
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		//_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingArray)
+
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
