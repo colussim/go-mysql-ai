@@ -74,7 +74,7 @@ func generateEmbedding(text string) []float32 {
 
 func fetchMedications(pathology string) OpenFDAResponse {
 	eencodedPathology := url.QueryEscape(pathology)
-	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=5", encodedPathology)
+	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
 	resp, _ := http.Get(url)
 	body, _ := ioutil.ReadAll(resp.Body)
 	var data OpenFDAResponse
@@ -95,6 +95,12 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) {
 		fmt.Println("❌ Error insert pathologies table:", err)
 		return
 	}
+
+	_, err := db.Exec("DELETE FROM medicationv")
+	if err != nil {
+		return fmt.Errorf("❌ Error deleting existing data from medicationv table : %w", err)
+	}
+
 	var pathologyID int
 	db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
 
@@ -109,7 +115,7 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) {
 			strings.Join(result.OpenFDA.ActiveIngredient, " "),
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
-		_, err := db.Exec("INSERT INTO medicaments (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		_, err := db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
 		if err != nil {
 			fmt.Println("❌ Error insert medicationv table:", err)
 		}
@@ -140,5 +146,5 @@ func RunImport(configPath string) {
 		InsertData(db, pathology, data)
 	}
 
-	fmt.Println("Importation terminée !")
+	//fmt.Println("Importation terminée !")
 }
