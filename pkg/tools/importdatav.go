@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -73,7 +75,7 @@ func LoadPathologies(filename string) (*Pathologies, error) {
 	return &pathologies, nil
 }
 
-func generateEmbedding(text string) []float32 {
+func generateEmbedding(text string) []float64 {
 
 	// Get the Ollama host from the environment variable or use the default local host
 	ollamaHost := os.Getenv("OLLAMA_HOST")
@@ -87,36 +89,17 @@ func generateEmbedding(text string) []float32 {
 
 	// Use the qwen2.5:0.5b model to generate embeddings
 
-	req := api.GenerateRequest{
+	req := &api.EmbeddingRequest{
 		Model:  "qwen2.5:0.5b",
 		Prompt: text,
-
-		Stream: &TRUE,
 	}
-	respChan, errChan := client.Generate(req)
-	var embedding []float32
-
-	for {
-		select {
-		case resp, ok := <-respChan:
-			if !ok {
-				respChan = nil
-			} else {
-				embedding = resp.Embedding
-			}
-		case err := <-errChan:
-			if err != nil {
-				fmt.Println("❌ Error generating embedding:", err)
-				return nil
-			}
-			errChan = nil
-		}
-		if respChan == nil && errChan == nil {
-			break
-		}
+	resp, err := client.Embeddings(context.Background(), req)
+	if err != nil {
+		log.Fatalln("❌ Error generating embedding:", err)
 	}
 
-	return embedding
+	return resp.Embedding
+
 }
 
 func fetchMedications2(pathology string) OpenFDAResponse {
