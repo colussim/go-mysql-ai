@@ -102,16 +102,6 @@ func generateEmbedding(text string) []float64 {
 
 }
 
-func fetchMedications2(pathology string) OpenFDAResponse {
-	encodedPathology := url.QueryEscape(pathology)
-	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
-	resp, _ := http.Get(url)
-	body, _ := io.ReadAll(resp.Body)
-	var data OpenFDAResponse
-	json.Unmarshal(body, &data)
-	return data
-}
-
 func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	encodedPathology := url.QueryEscape(pathology)
 	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
@@ -136,12 +126,7 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
-	_, err := db.Exec("DELETE FROM pathologies")
-	if err != nil {
-		return fmt.Errorf("❌ Error deleting existing data from pathologies table: %w", err)
-	}
-
-	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -176,6 +161,23 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	return nil
 }
 
+func initDatabase(db *sql.DB) error {
+	// Delete all data from the pathologies table
+	_, err := db.Exec("DELETE FROM pathologies")
+	if err != nil {
+		return fmt.Errorf("❌ Error deleting data from pathologies table: %w", err)
+	}
+
+	// Delete all data from the medicationv table
+	_, err = db.Exec("DELETE FROM medicationv")
+	if err != nil {
+		return fmt.Errorf("❌ Error deleting data from medicationv table: %w", err)
+	}
+
+	fmt.Println("✅ Tables pathologies and medicationv have been cleared.")
+	return nil
+}
+
 func RunImport(configPath string) error {
 	config, err := LoadConfig(configPath)
 	if err != nil {
@@ -187,13 +189,20 @@ func RunImport(configPath string) error {
 		fmt.Println("❌ Error parsing JSON contents of file pathologies:", err)
 		return err
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/ai_meds", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		fmt.Println("❌ Error connecting to MySQL:", err)
 		return err
 	}
 	defer db.Close()
+
+	// Initialize the database by clearing the tables
+	err = initDatabase(db)
+	if err != nil {
+		fmt.Println("❌ Error initializing database:", err)
+		return err
+	}
 
 	for _, pathology := range pathologies.Pathologies {
 		data, err := fetchMedications(pathology)
