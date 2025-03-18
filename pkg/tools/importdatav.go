@@ -129,15 +129,6 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	return data, nil
 }
 
-func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
-	var embedding []float64
-	err := db.QueryRow("SELECT embedding FROM pathologies WHERE nom = ?", pathology).Scan(&embedding)
-	if err != nil {
-		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
-	}
-	return embedding, nil
-}
-
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
