@@ -143,18 +143,6 @@ func float64SliceToBytes(values []float64) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Fonction pour convertir un slice de float64 en bytes
-func float64SliceToBytes(values []float64) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	for _, v := range values {
-		err := binary.Write(buf, binary.LittleEndian, v)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return buf.Bytes(), nil
-}
-
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
