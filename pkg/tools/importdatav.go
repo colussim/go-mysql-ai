@@ -200,44 +200,6 @@ func float64SliceToBinary(slice []float64) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func InsertData2(db *sql.DB, pathology string, data OpenFDAResponse) error {
-	pathologyEmbedding := generateEmbedding(pathology)
-
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
-	if err != nil {
-		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
-	}
-
-	_, err = db.Exec("DELETE FROM medicationv")
-	if err != nil {
-		return fmt.Errorf("❌ Error deleting existing data from medicationv table: %w", err)
-	}
-
-	var pathologyID int
-	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
-	if err != nil {
-		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
-	}
-
-	for _, result := range data.Results {
-		if len(result.OpenFDA.BrandName) == 0 {
-			continue
-		}
-		medicament := result.OpenFDA.BrandName[0]
-		text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
-			strings.Join(result.IndicationsAndUsage, " "),
-			strings.Join(result.Purpose, " "),
-			strings.Join(result.OpenFDA.ActiveIngredient, " "),
-			strings.Join(result.DosageAndAdmin, " "))
-		medEmbedding := generateEmbedding(text)
-		_, err := db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
-		if err != nil {
-			fmt.Println("❌ Error inserting into medicationv table:", err)
-		}
-	}
-	return nil
-}
-
 func initDatabase(db *sql.DB) error {
 	// Delete all data from the pathologies table
 	_, err := db.Exec("DELETE FROM pathologies")
