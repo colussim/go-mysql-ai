@@ -1,3 +1,4 @@
 CREATE USER 'health'@'%' IDENTIFIED BY 'XXXXXX';
-GRANT ALL PRIVILEGES ON health.* TO 'health'@'%';
+GRANT ALL PRIVILEGES ON health.* TO 'health'@'%' WITH GRANT OPTION;
+GRANT PROCESS ON *.* TO 'health'@'%';
 FLUSH PRIVILEGES;
