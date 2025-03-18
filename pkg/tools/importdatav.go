@@ -12,7 +12,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	//"github.com/ollama/ollama-go"
-	"github.com/ollama/ollama/"
+	"github.com/ollama/ollama-go"
 )
 
 type Config struct {
