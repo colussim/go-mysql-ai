@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -163,8 +165,14 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	// Generate embedding for the pathology
 	pathologyEmbedding := generateEmbedding(pathology)
 
+	// Convert the embedding to binary format
+	pathologyEmbeddingBinary, err := float64SliceToBinary(pathologyEmbedding)
+	if err != nil {
+		return fmt.Errorf("❌ Error converting pathology embedding to binary: %w", err)
+	}
+
 	// Insert the pathology into the database
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingBinary)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -189,13 +197,43 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
+		// Convert the medication embedding to binary format
+		medEmbeddingBinary, err := float64SliceToBinary(medEmbedding)
+		if err != nil {
+			fmt.Println("❌ Error converting medication embedding to binary:", err)
+			continue
+		}
+
 		// Insert the medication into the database
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingBinary)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
 	}
 	return nil
+}
+
+// Convert a slice of float64 to a binary format ([]byte)
+func float64SliceToBinary(slice []float64) ([]byte, error) {
+	const vectorSize = 768 // Expected size for VECTOR(768)
+	if len(slice) > vectorSize {
+		// Truncate the slice if it's too long
+		slice = slice[:vectorSize]
+	} else if len(slice) < vectorSize {
+		// Pad the slice with zeros if it's too short
+		padding := make([]float64, vectorSize-len(slice))
+		slice = append(slice, padding...)
+	}
+
+	// Convert the slice to binary format
+	buf := new(bytes.Buffer)
+	for _, v := range slice {
+		err := binary.Write(buf, binary.LittleEndian, v)
+		if err != nil {
+			return nil, fmt.Errorf("error writing float64 to binary: %w", err)
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 func initDatabase(db *sql.DB) error {
