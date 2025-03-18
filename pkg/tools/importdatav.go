@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,8 +129,14 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	// Generate embedding for the pathology
 	pathologyEmbedding := generateEmbedding(pathology)
 
+	// Convert the embedding to a binary format
+	pathologyEmbeddingBinary, err := float64SliceToBinary(pathologyEmbedding)
+	if err != nil {
+		return fmt.Errorf("❌ Error converting pathology embedding to binary: %w", err)
+	}
+
 	// Insert the pathology into the database
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
+	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbeddingBinary)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
@@ -153,13 +161,32 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
+		// Convert the medication embedding to a binary format
+		medEmbeddingBinary, err := float64SliceToBinary(medEmbedding)
+		if err != nil {
+			fmt.Println("❌ Error converting medication embedding to binary:", err)
+			continue
+		}
+
 		// Insert the medication into the database
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbeddingBinary)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
 	}
 	return nil
+}
+
+// Convert a slice of float64 to a binary format ([]byte)
+func float64SliceToBinary(slice []float64) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	for _, v := range slice {
+		err := binary.Write(buf, binary.LittleEndian, v)
+		if err != nil {
+			return nil, fmt.Errorf("error writing float64 to binary: %w", err)
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 func InsertData2(db *sql.DB, pathology string, data OpenFDAResponse) error {
