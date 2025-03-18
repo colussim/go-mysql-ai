@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/ollama/ollama-go"
 )
 
 type Config struct {
