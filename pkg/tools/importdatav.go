@@ -44,6 +44,11 @@ type OpenFDAResponse struct {
 	} `json:"results"`
 }
 
+var (
+	FALSE = false
+	TRUE  = true
+)
+
 func LoadConfig(filename string) (*Config, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
@@ -76,17 +81,42 @@ func generateEmbedding(text string) []float32 {
 		ollamaHost = "http://localhost:11434" // Default Ollama local server URL
 	}
 
+	url, _ := url.Parse(ollamaHost)
 	// Create a new Ollama client with the local host
-	client := api.NewClient(ollamaHost)
+	client := api.NewClient(url, http.DefaultClient)
 
 	// Use the qwen2.5:0.5b model to generate embeddings
-	resp, err := client.GenerateEmbedding("qwen2.5:0.5b", text)
-	if err != nil {
-		fmt.Println("❌ Error generating embedding:", err)
-		return nil
+
+	req := api.GenerateRequest{
+		Model:  "qwen2.5:0.5b",
+		Prompt: text,
+
+		Stream: &TRUE,
+	}
+	respChan, errChan := client.Generate(req)
+	var embedding []float32
+
+	for {
+		select {
+		case resp, ok := <-respChan:
+			if !ok {
+				respChan = nil
+			} else {
+				embedding = resp.Embedding
+			}
+		case err := <-errChan:
+			if err != nil {
+				fmt.Println("❌ Error generating embedding:", err)
+				return nil
+			}
+			errChan = nil
+		}
+		if respChan == nil && errChan == nil {
+			break
+		}
 	}
 
-	return resp.Vector
+	return embedding
 }
 
 func fetchMedications2(pathology string) OpenFDAResponse {
