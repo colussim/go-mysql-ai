@@ -12,7 +12,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	//"github.com/ollama/ollama-go"
-	"github.com/ollama/ollama-go"
+	"github.com/ollama/ollama/api"
 )
 
 type Config struct {
@@ -77,7 +77,7 @@ func generateEmbedding(text string) []float32 {
 	}
 
 	// Create a new Ollama client with the local host
-	client := ollama.NewClient(ollamaHost)
+	client := api.NewClient(ollamaHost)
 
 	// Use the qwen2.5:0.5b model to generate embeddings
 	resp, err := client.GenerateEmbedding("qwen2.5:0.5b", text)
