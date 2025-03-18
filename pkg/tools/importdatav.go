@@ -134,8 +134,8 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 
 	//fmt.Println(pathologyEmbedding)
 
-	var pathologyEmbeddingArray [768]float64
-	if len(pathologyEmbedding) != 768 {
+	var pathologyEmbeddingArray [896]float64
+	if len(pathologyEmbedding) != 896 {
 		return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(pathologyEmbedding))
 	}
 	copy(pathologyEmbeddingArray[:], pathologyEmbedding)
@@ -165,8 +165,8 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
-		var medEmbeddingArray [768]float64
-		if len(medEmbedding) != 768 {
+		var medEmbeddingArray [896]float64
+		if len(medEmbedding) != 896 {
 			return fmt.Errorf("❌ Embedding size mismatch: expected 768, got %d", len(medEmbedding))
 		}
 		copy(medEmbeddingArray[:], medEmbedding)
