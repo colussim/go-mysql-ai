@@ -132,6 +132,8 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 	pathologyEmbedding := generateEmbedding(pathology)
 
+	fmt.Println(pathologyEmbedding)
+
 	// Insérer directement le vecteur dans la base de données
 	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
 	if err != nil {
