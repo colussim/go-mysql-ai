@@ -1,11 +1,116 @@
 {
-    "pathologies": [
-        "headache",
-        "sore throat",
-        "nausea",
-        "stomach ache",
-        "diarrhea",
-        "rash",
-        "cold"
-    ]
+    "pathologies": {
+        "headache": {
+            "description": "Pain located in the head, scalp, or neck.",
+            "symptoms": [
+                "throbbing pain",
+                "sensitivity to light and sound",
+                "nausea",
+                "vomiting"
+            ],
+            "treatments": [
+                "over-the-counter pain relievers",
+                "rest in a dark room",
+                "hydration"
+            ]
+        },
+        "diarrhea": {
+            "description": "Frequent and loose bowel movements.",
+            "symptoms": [
+                "abdominal cramps",
+                "bloating",
+                "dehydration",
+                "urgent need to go to the bathroom"
+            ],
+            "treatments": [
+                "rehydration solutions",
+                "antidiarrheal medications",
+                "dietary changes"
+            ]
+        },
+        "nausea": {
+            "description": "A feeling of sickness with an inclination to vomit.",
+            "symptoms": [
+                "stomach discomfort",
+                "sweating",
+                "dizziness"
+            ],
+            "treatments": [
+                "anti-nausea medications",
+                "ginger tea",
+                "small, bland meals"
+            ]
+        },
+        "rash": {
+            "description": "An area of irritated or swollen skin.",
+            "symptoms": [
+                "redness",
+                "itching",
+                "dryness",
+                "flaking"
+            ],
+            "treatments": [
+                "topical creams",
+                "cool compresses",
+                "antihistamines"
+            ]
+        },
+        "fever": {
+            "description": "Elevated body temperature, often due to illness.",
+            "symptoms": [
+                "chills",
+                "sweating",
+                "fatigue",
+                "headache"
+            ],
+            "treatments": [
+                "antipyretics (e.g., acetaminophen)",
+                "hydration",
+                "rest"
+            ]
+        },
+        "stomach ache": {
+            "description": "Discomfort in the abdominal area.",
+            "symptoms": [
+                "cramping",
+                "bloating",
+                "gas",
+                "nausea"
+            ],
+            "treatments": [
+                "antacids",
+                "dietary adjustments",
+                "hydration"
+            ]
+        },
+        "cold": {
+            "description": "A viral infection of the upper respiratory tract.",
+            "symptoms": [
+                "runny nose",
+                "sore throat",
+                "cough",
+                "sneezing",
+                "mild body aches"
+            ],
+            "treatments": [
+                "rest",
+                "hydration",
+                "over-the-counter decongestants"
+            ]
+        },
+        "pharyngitis": {
+            "description": "Inflammation of the pharynx, causing a sore throat.",
+            "symptoms": [
+                "sore throat",
+                "difficulty swallowing",
+                "redness in the throat",
+                "fever"
+            ],
+            "treatments": [
+                "throat lozenges",
+                "pain relievers",
+                "saltwater gargle"
+            ]
+        }
+    }
 }

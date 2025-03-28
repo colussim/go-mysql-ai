@@ -1,21 +1,19 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
-	//"github.com/ollama/ollama-go"
 	"github.com/ollama/ollama/api"
 )
 
@@ -32,8 +30,14 @@ type Config struct {
 	} `json:"pathologie"`
 }
 
-type Pathologies struct {
-	Pathologies []string `json:"pathologies"`
+type PathologyDetail struct {
+	Description string   `json:"description"`
+	Symptoms    []string `json:"symptoms"`
+	Treatments  []string `json:"treatments"`
+}
+
+type Pathology struct {
+	Pathologies map[string]PathologyDetail `json:"pathologies"`
 }
 
 type OpenFDAResponse struct {
@@ -42,9 +46,15 @@ type OpenFDAResponse struct {
 			BrandName        []string `json:"brand_name"`
 			ActiveIngredient []string `json:"active_ingredient"`
 		} `json:"openfda"`
-		IndicationsAndUsage []string `json:"indications_and_usage"`
-		Purpose             []string `json:"purpose"`
-		DosageAndAdmin      []string `json:"dosage_and_administration"`
+		InactiveIngredient                []string `json:"inactive_ingredient"`
+		IndicationsAndUsage               []string `json:"indications_and_usage"`
+		Purpose                           []string `json:"purpose"`
+		KeepOutOfReachOfChildren          []string `json:"keep_out_of_reach_of_children"`
+		Warnings                          []string `json:"warnings"`
+		SPLProductDataElements            []string `json:"spl_product_data_elements"`
+		DosageAndAdministration           []string `json:"dosage_and_administration"`
+		PregnancyOrBreastFeeding          []string `json:"pregnancy_or_breast_feeding"`
+		PackageLabelPRincipalDisplayPanel []string `json:"package_label_principal_display_panel"`
 	} `json:"results"`
 }
 
@@ -65,12 +75,12 @@ func LoadConfig(filename string) (*Config, error) {
 	return &config, nil
 }
 
-func LoadPathologies(filename string) (*Pathologies, error) {
+func LoadPathologies(filename string) (*Pathology, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	var pathologies Pathologies
+	var pathologies Pathology
 	if err := json.Unmarshal(file, &pathologies); err != nil {
 		return nil, err
 	}
@@ -106,7 +116,8 @@ func generateEmbedding(text string) []float64 {
 
 func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	encodedPathology := url.QueryEscape(pathology)
-	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s&limit=50", encodedPathology)
+	url := fmt.Sprintf("https://api.fda.gov/drug/label.json?search=indications_and_usage:%s+AND+_exists_:openfda.brand_name&limit=50", encodedPathology)
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return OpenFDAResponse{}, fmt.Errorf("❌ Error fetching medications: %w", err)
@@ -131,40 +142,123 @@ func fetchMedications(pathology string) (OpenFDAResponse, error) {
 	return data, nil
 }
 
-// Fonction pour convertir un slice de float64 en bytes
-func float64SliceToBytes(values []float64) ([]byte, error) {
-	buf := new(bytes.Buffer)
+func float64SliceToString(values []float64) (string, error) {
 	for _, v := range values {
-		err := binary.Write(buf, binary.LittleEndian, v)
-		if err != nil {
-			return nil, err
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return "", fmt.Errorf("invalid value detected in vector: %v", v)
 		}
 	}
-	return buf.Bytes(), nil
+
+	var str []string
+	for _, v := range values {
+		str = append(str, fmt.Sprintf("%f", v))
+	}
+	return "[" + strings.Join(str, ",") + "]", nil
 }
 
-func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
-	pathologyEmbedding := generateEmbedding(pathology)
+func InsertData(db *sql.DB, pathology string, details PathologyDetail, data OpenFDAResponse) error {
 
-	// Convertir le slice en bytes
-	pathologyEmbeddingBytes, err := float64SliceToBytes(pathologyEmbedding)
+	embeddingText := fmt.Sprintf("%s. Description: %s. Symptoms: %s. Treatments: %s.",
+		pathology,
+		details.Description,
+		strings.Join(details.Symptoms, ", "),
+		strings.Join(details.Treatments, ", "))
+
+	pathologyEmbedding := generateEmbedding(embeddingText)
+
+	// Convert slice to string
+	pathologyEmbeddingString, err := float64SliceToString(pathologyEmbedding)
 	if err != nil {
-		return fmt.Errorf("❌ Error converting pathology embedding to bytes: %w", err)
+		return fmt.Errorf("❌ Error converting pathology embedding to string: %w", err)
 	}
 
-	// Insérer le vecteur en utilisant STRING_TO_VECTOR
-	_, err = db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, STRING_TO_VECTOR(?))", pathology, pathologyEmbeddingBytes)
+	// Insert vector using STRING_TO_VECTOR
+	_, err = db.Exec("INSERT INTO pathologies (name, embedding) VALUES (?, STRING_TO_VECTOR(?))", pathology, pathologyEmbeddingString)
 	if err != nil {
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
 	}
 
 	var pathologyID int
-	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
+	err = db.QueryRow("SELECT id FROM pathologies WHERE name = ?", pathology).Scan(&pathologyID)
 	if err != nil {
 		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
 	}
 
 	for _, result := range data.Results {
+		if len(result.OpenFDA.BrandName) == 0 {
+			continue
+		}
+
+		medicament := result.OpenFDA.BrandName[0]
+
+		// Récupération et concaténation des informations
+		indications := strings.Join(result.IndicationsAndUsage, ". ")
+		purpose := strings.Join(result.Purpose, ". ")
+
+		dosage := strings.Join(result.DosageAndAdministration, ". ")
+		inactiveIngredients := strings.Join(result.InactiveIngredient, ", ")
+		keepOutOfReach := strings.Join(result.KeepOutOfReachOfChildren, ". ")
+		warnings := strings.Join(result.Warnings, ". ")
+		splProductData := strings.Join(result.SPLProductDataElements, ". ")
+		pregnancy := strings.Join(result.PregnancyOrBreastFeeding, ". ")
+		packageLabel := strings.Join(result.PackageLabelPRincipalDisplayPanel, ". ")
+
+		// Texte pour l'embedding
+		/*text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
+			indications, purpose, activeIngredients, dosage)
+		medEmbedding := generateEmbedding(text)*/
+
+		text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Active Ingredients: %s. Dosage: %s. Warnings: %s. Package Label: %s",
+			medicament,
+			strings.Join(result.IndicationsAndUsage, ", "),
+			strings.Join(result.Purpose, ", "),
+			strings.Join(result.OpenFDA.ActiveIngredient, ", "),
+			strings.Join(result.DosageAndAdministration, ", "),
+			strings.Join(result.Warnings, ", "),
+			packageLabel,
+		)
+
+		medEmbedding := generateEmbedding(text)
+		// Convertir le slice en string
+		medEmbeddingString, err := float64SliceToString(medEmbedding)
+		if err != nil {
+			return fmt.Errorf("❌ Error converting medication embedding to string: %w", err)
+		}
+
+		// Insertion dans la base de données
+		_, err = db.Exec(`INSERT INTO medicationv (
+            pathologie_id,
+			drug_name,
+            inactive_ingredient,
+            purpose,
+            keep_out_of_reach_of_children,
+            warnings,
+            spl_product_data_elements,
+            dosage_and_administration,
+            pregnancy_or_breast_feeding,
+            package_label_principal_display_panel,
+            indications_and_usage,
+            embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, STRING_TO_VECTOR(?))`,
+			pathologyID,
+			medicament,
+			inactiveIngredients,
+			purpose,
+			keepOutOfReach,
+			warnings,
+			splProductData,
+			dosage,
+			pregnancy,
+			packageLabel,
+			indications,
+			medEmbeddingString, // Vecteur d'embedding converti
+		)
+		if err != nil {
+			return fmt.Errorf("❌ Error inserting medication data: %w", err)
+		}
+	}
+
+	/*vfor _, result := range data.Results {
 		if len(result.OpenFDA.BrandName) == 0 {
 			continue
 		}
@@ -176,88 +270,34 @@ func InsertData(db *sql.DB, pathology string, data OpenFDAResponse) error {
 			strings.Join(result.DosageAndAdmin, " "))
 		medEmbedding := generateEmbedding(text)
 
-		// Convertir le slice en bytes
-		medEmbeddingBytes, err := float64SliceToBytes(medEmbedding)
+		// Convert slice to string
+		medEmbeddingString, err := float64SliceToString(medEmbedding)
+
 		if err != nil {
-			return fmt.Errorf("❌ Error converting medication embedding to bytes: %w", err)
+			return fmt.Errorf("❌ Error converting medication embedding to string: %w", err)
 		}
 
-		// Insérer le vecteur en utilisant STRING_TO_VECTOR
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, STRING_TO_VECTOR(?))", medicament, text, pathologyID, medEmbeddingBytes)
-		if err != nil {
-			fmt.Println("❌ Error inserting into medicationv table:", err)
-		}
-	}
-	return nil
-}
-
-func GetPathologyEmbedding(db *sql.DB, pathology string) ([]float64, error) {
-	var embeddingBytes []byte
-	err := db.QueryRow("SELECT CAST(embedding AS BINARY) FROM pathologies WHERE nom = ?", pathology).Scan(&embeddingBytes)
-	if err != nil {
-		return nil, fmt.Errorf("❌ Error retrieving embedding: %w", err)
-	}
-
-	// Convertir les bytes en slice de float64
-	embedding := make([]float64, len(embeddingBytes)/8)
-	buf := bytes.NewReader(embeddingBytes)
-	err = binary.Read(buf, binary.LittleEndian, &embedding)
-	if err != nil {
-		return nil, fmt.Errorf("❌ Error converting bytes to embedding: %w", err)
-	}
-	return embedding, nil
-}
-
-func InsertData2(db *sql.DB, pathology string, data OpenFDAResponse) error {
-	// Generate embedding for the pathology
-	pathologyEmbedding := generateEmbedding(pathology)
-
-	// Insert the pathology into the database
-	_, err := db.Exec("INSERT INTO pathologies (nom, embedding) VALUES (?, ?)", pathology, pathologyEmbedding)
-	if err != nil {
-		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
-	}
-
-	// Fetch the pathology ID
-	var pathologyID int
-	err = db.QueryRow("SELECT id FROM pathologies WHERE nom = ?", pathology).Scan(&pathologyID)
-	if err != nil {
-		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
-	}
-
-	// Insert medications
-	for _, result := range data.Results {
-		if len(result.OpenFDA.BrandName) == 0 {
-			continue
-		}
-		medicament := result.OpenFDA.BrandName[0]
-		text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
-			strings.Join(result.IndicationsAndUsage, " "),
-			strings.Join(result.Purpose, " "),
-			strings.Join(result.OpenFDA.ActiveIngredient, " "),
-			strings.Join(result.DosageAndAdmin, " "))
-		medEmbedding := generateEmbedding(text)
-
-		// Insert the medication into the database
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, ?)", medicament, text, pathologyID, medEmbedding)
+		// Insert vector using STRING_TO_VECTOR
+		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, STRING_TO_VECTOR(?))", medicament, text, pathologyID, medEmbeddingString)
 		if err != nil {
 			fmt.Println("❌ Error inserting into medicationv table:", err)
 		}
-	}
+	}*/
 	return nil
 }
 
 func initDatabase(db *sql.DB) error {
-	// Delete all data from the pathologies table
-	_, err := db.Exec("DELETE FROM pathologies")
-	if err != nil {
-		return fmt.Errorf("❌ Error deleting data from pathologies table: %w", err)
-	}
 
 	// Delete all data from the medicationv table
-	_, err = db.Exec("DELETE FROM medicationv")
+	_, err := db.Exec("DELETE FROM medicationv")
 	if err != nil {
 		return fmt.Errorf("❌ Error deleting data from medicationv table: %w", err)
+	}
+
+	// Delete all data from the pathologies table
+	_, err = db.Exec("DELETE FROM pathologies")
+	if err != nil {
+		return fmt.Errorf("❌ Error deleting data from pathologies table: %w", err)
 	}
 
 	fmt.Println("✅ Tables pathologies and medicationv have been cleared.")
@@ -290,13 +330,15 @@ func RunImport(configPath string) error {
 		return err
 	}
 
-	for _, pathology := range pathologies.Pathologies {
+	for pathology := range pathologies.Pathologies {
 		data, err := fetchMedications(pathology)
 		if err != nil {
 			fmt.Println("❌ Error fetching medications for pathology:", pathology, err)
 			continue
 		}
-		err = InsertData(db, pathology, data)
+		details := pathologies.Pathologies[pathology]
+
+		err = InsertData(db, pathology, details, data)
 		if err != nil {
 			fmt.Println("❌ Error inserting data for pathology:", pathology, err)
 		}

@@ -1,0 +1,13 @@
+{
+    "mysql": {
+        "user": "xxxx",
+        "password": "xxxx",
+        "server": "127.0.0.1",
+        "port": "xxxx",
+        "type_auth": "password"
+    },
+    "pathologie": {
+        "file": "config/pathologies.json"
+    }
+}
+

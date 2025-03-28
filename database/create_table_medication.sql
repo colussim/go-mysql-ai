@@ -19,4 +19,3 @@ CREATE TABLE medication (
     version VARCHAR(10),
     package_label TEXT
 ) TABLESPACE health_ts;
-

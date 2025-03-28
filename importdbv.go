@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -10,6 +11,15 @@ import (
 	"github.com/briandowns/spinner"
 	_ "github.com/go-sql-driver/mysql"
 )
+
+func formatDuration(duration time.Duration) string {
+
+	hours := int(duration.Hours())
+	minutes := int(duration.Minutes()) % 60
+	seconds := int(duration.Seconds()) % 60
+
+	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
+}
 
 func main() {
 
@@ -28,6 +38,7 @@ func main() {
 
 	spin.Stop()
 	duration := time.Since(startTime)
-	log.Printf("✅ Import completed in %2f.", duration)
+
+	log.Printf("✅ Import completed in %s\n", formatDuration(duration))
 	log.Println("✅ Data inserted successfully.")
 }
