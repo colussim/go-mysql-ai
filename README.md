@@ -69,7 +69,7 @@ Ollama lets you interact directly with an LLM via a command line (CLI) or REST A
 
 ## Installation & Usage
 
-I will not detail the installation of MySQL here; we assume that you have a functional instance.
+I will not detail the installation of MySQL here.We assume that you have a functional instance.
 
 **1. Clone the repository**
 
@@ -174,6 +174,8 @@ Medication Embedding Format:
 
 
 **4. Configure the Demo**
+
+The first thing to do is to copy the file *config/config.json.tmp* to *config/config.json*.
 
 Modify the file *config/config.json* with your MySQL credentials and the embedding model you want to use. By default, the model is *Qwen2.5:0.5b.*
 

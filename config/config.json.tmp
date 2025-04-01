@@ -8,6 +8,12 @@
     },
     "pathologie": {
         "file": "config/pathologies.json"
+    },
+    "model": {
+        "name": "qwen2.5:0.5b"
+    },
+    "chatbotport": {
+        "port": 3001
     }
 }
 
