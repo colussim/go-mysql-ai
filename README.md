@@ -261,9 +261,8 @@ INFO[0000] ✅ HTTP service started on port 3001
 By default, the chatbot is bound to port 3001. You can change the port either in the configuration file (conf/config.json) under the entry *Chatbotport*, or by specifying the port on the command line with the parameter *-port Your_Port*.
 To stop the local HTTP service, press the Ctrl+C keys.
 
-chatbox1
 
-![chatbox](imgs/chatbox1.png)
+![chatbox](imgs/chatbox3.png)
 
 
 ---
