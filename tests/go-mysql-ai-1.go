@@ -27,7 +27,6 @@ type TemplateData struct {
 }
 
 const HTTP_PORT = 3001
-const configPath = "config/config.json"
 
 type Response struct {
 	Response string `json:"response"`
@@ -60,23 +59,12 @@ type Pathology struct {
 	Pathologies map[string]PathologyDetail `json:"pathologies"`
 }
 
-type Medication struct {
-	DrugName     string    `json:"drug_name"`
-	Indications  string    `json:"indications_and_usage"`
-	Purpose      string    `json:"purpose"`
-	Dosage       string    `json:"dosage_and_administration"`
-	Warnings     string    `json:"warnings"`
-	PackageLabel string    `json:"package_label"`
-	Embedding    []float64 `json:"embedding"`
-}
-
 // Main html page: index.html
 var tpl = template.Must(template.ParseFiles("chat.html"))
 
 var logger *logrus.Logger
 var db *sql.DB
 var pathology *Pathology
-var config *Config
 
 func initDB(config *Config) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
@@ -106,27 +94,25 @@ func LoadConfig(filename string) (*Config, error) {
 	return &config, nil
 }
 
-func LoadPathologies(filename string) (*Pathology, error) {
+func LoadConfig2(filename string) (*Pathology, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	var pathologies Pathology
-	if err := json.Unmarshal(file, &pathologies); err != nil {
+	var config Pathology
+	if err := json.Unmarshal(file, &config); err != nil {
 		return nil, err
 	}
-	return &pathologies, nil
+	return &config, nil
 }
 
 func extractPathology(input string) string {
 	input = strings.ToLower(input)
-
-	for pathology := range pathology.Pathologies {
+	for _, pathology := range pathology.Pathologies {
 		if strings.Contains(input, strings.ToLower(pathology)) {
 			return pathology
 		}
 	}
-
 	return ""
 }
 
@@ -158,11 +144,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 
 	extractedPathology := extractPathology(message)
 	if extractedPathology == "" {
-		pathologiesList := make([]string, 0, len(pathology.Pathologies))
-		for name := range pathology.Pathologies {
-			pathologiesList = append(pathologiesList, name)
-		}
-		response := Response{Response: "I did not recognize any pathology in your message. The pathologies supported are:" + strings.Join(pathologiesList, ", ")}
+		response := Response{Response: "I did not recognize any pathology in your message. The pathologies supported are:" + strings.Join(pathology.Pathologies, ", ")}
 		sendJSONResponse(w, response)
 		return
 	}
@@ -223,39 +205,20 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 */
-
-func getPathologyIDByName(pathologyName string) (int, error) {
-	var id int
-	err := db.QueryRow("SELECT id FROM pathologies WHERE name = ?", strings.ToLower(pathologyName)).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("❌ Error retrieving pathology ID: %w", err)
-	}
-	return id, nil
-}
-
 func generateResponse(input string) (string, error) {
-	// Étape 1 : Récupérer l'embedding pour la pathologie
-	idpath, err := getPathologyIDByName(input)
+	// Step 1: Retrieve the embedding for the pathology
+	embedding, err := getPathologyEmbedding(input)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error getting pathology embedding: %w", err)
 	}
 
-	// Step 2 : Recommander des médicaments en utilisant l'embedding
-	medications, err := findSimilarMedications(idpath, 10)
+	// Step 2: Recommend medications using the embedding
+	response, err := recommendMedications2(embedding)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error recommending medications: %w", err)
 	}
 
-	// Step 3 : Construire un prompt pour Ollama
-	prompt := buildPromptForOllama(input, medications)
-
-	// Step 4 : Envoyer à Ollama et obtenir une réponse
-	response, err := sendToOllama(prompt)
-	if err != nil {
-		return "", fmt.Errorf("❌ Error sending request to Ollama: %w", err)
-	}
-
-	// Step 5 : Retourner le contenu de la réponse
+	// Step 3: Return the content of the response
 	return response.Content, nil
 }
 
@@ -276,38 +239,55 @@ func getPathologyEmbedding(pathology string) ([]float64, error) {
 	return embedding, nil
 }
 
-func findSimilarMedications(pathologyID int, limit int) ([]Medication, error) {
-
+func findSimilarMedications(pathologyEmbedding []float64, limit int) ([]string, error) {
 	query := `
-	SELECT drug_name,purpose,warnings,dosage_and_administration,package_label_principal_display_panel,indications_and_usage,VECTOR_TO_STRING(embedding)
-	FROM medicationv
-	WHERE pathologie_id = ?
-	LIMIT ?`
+        SELECT drug_name
+        FROM medicationv
+        ORDER BY DOT_PRODUCT(embedding, STRING_TO_VECTOR(?)) DESC
+        LIMIT ?
+    `
 
-	rows, err := db.Query(query, pathologyID, limit)
+	// Convert the pathology embedding to a string
+	pathologyEmbeddingString, err := float64SliceToString(pathologyEmbedding)
 	if err != nil {
-		return nil, fmt.Errorf("❌ Error querying medications for pathology: %w", err)
+		return nil, fmt.Errorf("❌ Error converting embedding to string: %w", err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error converting embedding to string: %w", err)
+	}
+
+	rows, err := db.Query(query, pathologyEmbeddingString, limit)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error querying similar medications: %w", err)
 	}
 	defer rows.Close()
 
-	var medications []Medication
+	medications := []string{}
 	for rows.Next() {
-		var med Medication
-		var embeddingString string
-
-		if err := rows.Scan(&med.DrugName, &med.Indications, &med.Purpose, &med.Dosage, &med.Warnings, &med.PackageLabel, &embeddingString); err != nil {
-			return nil, fmt.Errorf("❌ Error scanning row: %w", err)
+		var medication string
+		if err := rows.Scan(&medication); err != nil {
+			return nil, fmt.Errorf("❌ Error scanning medication name: %w", err)
 		}
-
-		// Convertir l'embedding de string à slice de float64
-		med.Embedding, err = stringToFloat64Slice(embeddingString)
-		if err != nil {
-			return nil, fmt.Errorf("❌ Error converting medication embedding to float64 slice: %w", err)
-		}
-
-		medications = append(medications, med)
+		medications = append(medications, medication)
 	}
+
 	return medications, nil
+}
+
+func float64SliceToString(slice []float64) (string, error) {
+	var builder strings.Builder
+	builder.WriteString("[")
+	for i, value := range slice {
+		if i > 0 {
+			builder.WriteString(",")
+		}
+		_, err := fmt.Fprintf(&builder, "%f", value)
+		if err != nil {
+			return "", fmt.Errorf("❌ Error formatting float64 to string: %w", err)
+		}
+	}
+	builder.WriteString("]")
+	return builder.String(), nil
 }
 
 func stringToFloat64Slice(embeddingString string) ([]float64, error) {
@@ -327,56 +307,43 @@ func stringToFloat64Slice(embeddingString string) ([]float64, error) {
 			return nil, fmt.Errorf("❌ Error converting string to float64: %w", err)
 		}
 		embedding[i] = value
-
 	}
 
 	return embedding, nil
 }
 
-func buildPromptForOllama(pathology string, medications []Medication) string {
-	prompt := fmt.Sprintf("For the pathology: '%s', the following medications are available:\n", pathology)
-	for _, med := range medications {
-		prompt += fmt.Sprintf(
-			"- Medication Name: %s\n  Indications: %s\n  Purpose: %s\n  Dosage: %s\n  Package Label: %s\n",
-			med.DrugName,
-			med.Indications,
-			med.Purpose,
-			med.Dosage,
-			med.Warnings,
-			med.PackageLabel)
+func recommendMedications(embedding []float64) (string, error) {
+	// Step 1: Find similar medications
+	medications, err := findSimilarMedications(embedding, 10) // Limit to top 5 medications
+	if err != nil {
+		return "", fmt.Errorf("❌ Error finding similar medications: %w", err)
 	}
-	prompt += "Based on the above medications, please provide additional recommendations."
-	return prompt
-}
 
-func sendToOllama(prompt string) (*OllamaResponse, error) {
-	// Obtenez le serveur Ollama depuis la variable d'environnement ou utilisez l'URL local par défaut
+	// Step 2: Construct the prompt for Ollama
+	medicationList := strings.Join(medications, ", ")
+	prompt := fmt.Sprintf("Based on the embedding, the most similar medications are: %s. Provide a detailed recommendation for these medications.", medicationList)
+
+	// Step 3: Send the prompt to Ollama
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
-		ollamaHost = "http://localhost:11434" // URL par défaut
+		ollamaHost = "http://localhost:11434" // Default Ollama local server URL
 	}
+
 	parsedURL, err := url.Parse(ollamaHost)
 	if err != nil {
-		return nil, fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
+		return "", fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
 	}
 
-	// Créer un client Ollama
 	client := api.NewClient(parsedURL, http.DefaultClient)
 
-	// Instructions système pour le modèle
-	systemInstructions := "You are an expert pharmacist. Always respond in English. Provide brief and structured answers."
-
-	// Créer la requête de chat
 	request := api.ChatRequest{
 		Model: "qwen2.5:0.5b",
 		Messages: []api.Message{
-			{Role: "system", Content: systemInstructions},
+			{Role: "system", Content: "You are an expert pharmacist. Always respond in English."},
 			{Role: "user", Content: prompt},
 		},
-		Stream: func(b bool) *bool { return &b }(true),
 	}
 
-	// Envoyer la requête de chat à Ollama
 	var responseContent strings.Builder
 	err = client.Chat(context.Background(), &request, func(resp api.ChatResponse) error {
 		responseContent.WriteString(resp.Message.Content)
@@ -384,31 +351,83 @@ func sendToOllama(prompt string) (*OllamaResponse, error) {
 	})
 
 	if err != nil {
+		return "", fmt.Errorf("❌ Error calling Ollama API: %w", err)
+	}
+
+	return responseContent.String(), nil
+}
+func recommendMedications2(embedding []float64) (*OllamaResponse, error) {
+
+	// Get the Ollama host from the environment variable or use the default local host
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434" // Default Ollama local server URL
+	}
+
+	// Parse the Ollama host URL
+	parsedURL, err := url.Parse(ollamaHost)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
+	}
+
+	// Create a new Ollama client
+	client := api.NewClient(parsedURL, http.DefaultClient)
+
+	// Convert the embedding to JSON
+	embeddingJSON, err := json.Marshal(embedding)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error converting embedding to JSON: %w", err)
+	}
+
+	systemInstructions := "You are an expert pharmacist. Always respond in English. Provide brief and structured answers."
+	question := fmt.Sprintf("Here is the embedding of a pathology: %s, Based on this embedding, recommend appropriate medications. List them as bullet points.", string(embeddingJSON))
+
+	// Create the chat request payload
+	request := api.ChatRequest{
+		Model: "qwen2.5:0.5b",
+		Messages: []api.Message{
+			{Role: "system", Content: systemInstructions},
+			{Role: "user", Content: question},
+		},
+		Stream: func(b bool) *bool { return &b }(true),
+		//Format: "html",
+	}
+
+	// Send the chat request to Ollama
+	var responseContent strings.Builder // Declare the variable to store the response content
+	err = client.Chat(context.Background(), &request, func(resp api.ChatResponse) error {
+		fmt.Print(resp.Message.Content)
+		// Capture the response content
+		responseContent.WriteString(resp.Message.Content)
+		//responseContent = resp.Message.Content
+
+		//fmt.Print(responseContent)
+		return nil
+	})
+
+	if err != nil {
 		return nil, fmt.Errorf("❌ Error calling Ollama API: %w", err)
 	}
 
+	// Parse the response content into a list of medications
+	/*medications := []string{}
+	if responseContent != "" {
+		// Assuming the response content is a comma-separated list of medications
+		medications = strings.Split(responseContent, ",")
+	}*/
 	return &OllamaResponse{
 		Content: responseContent.String(),
 	}, nil
+
+	//return responseContent, nil
 }
 
 func init() {
 	var err error
-
-	config, err := LoadConfig(configPath)
-	if err != nil {
-		logger.Fatal("❌ Error eading config file:", err)
-	}
-	pathology, err = LoadPathologies(config.Pathologie.File)
+	pathology, err = LoadConfig2("config/pathologies.json")
 	if err != nil {
 		logger.Fatal("❌ Error loading config pathologies:", err)
 	}
-
-	// Initialize database connection
-	if err := initDB(config); err != nil {
-		logger.Fatalf("❌ Error initializing database: %v", err)
-	}
-	//defer db.Close()
 }
 
 func main() {
@@ -425,10 +444,16 @@ func main() {
 
 	logger = logrus.New()
 
-	/*	config, err := LoadConfig("config/config.json")
-		if err != nil {
-			logger.Fatalf("❌ Error loading configuration: %v", err)
-		}*/
+	config, err := LoadConfig("config/config.json")
+	if err != nil {
+		logger.Fatalf("❌ Error loading configuration: %v", err)
+	}
+
+	// Initialiser la connexion à la base de données
+	if err := initDB(config); err != nil {
+		logger.Fatalf("❌ Error initializing database: %v", err)
+	}
+	defer db.Close()
 
 	fs := http.FileServer(http.Dir("dist"))
 

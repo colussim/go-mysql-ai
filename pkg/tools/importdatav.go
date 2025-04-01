@@ -203,16 +203,11 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 		pregnancy := strings.Join(result.PregnancyOrBreastFeeding, ". ")
 		packageLabel := strings.Join(result.PackageLabelPRincipalDisplayPanel, ". ")
 
-		// Texte pour l'embedding
-		/*text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
-			indications, purpose, activeIngredients, dosage)
-		medEmbedding := generateEmbedding(text)*/
-
-		text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Active Ingredients: %s. Dosage: %s. Warnings: %s. Package Label: %s",
+		//text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Active Ingredients: %s. Dosage: %s. Warnings: %s. Package Label: %s",
+		text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Dosage: %s. Warnings: %s. Package Label: %s",
 			medicament,
 			strings.Join(result.IndicationsAndUsage, ", "),
 			strings.Join(result.Purpose, ", "),
-			strings.Join(result.OpenFDA.ActiveIngredient, ", "),
 			strings.Join(result.DosageAndAdministration, ", "),
 			strings.Join(result.Warnings, ", "),
 			packageLabel,
@@ -257,32 +252,6 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 			return fmt.Errorf("❌ Error inserting medication data: %w", err)
 		}
 	}
-
-	/*vfor _, result := range data.Results {
-		if len(result.OpenFDA.BrandName) == 0 {
-			continue
-		}
-		medicament := result.OpenFDA.BrandName[0]
-		text := fmt.Sprintf("%s. Purpose: %s. Active ingredients: %s. Dosage: %s",
-			strings.Join(result.IndicationsAndUsage, " "),
-			strings.Join(result.Purpose, " "),
-			strings.Join(result.OpenFDA.ActiveIngredient, " "),
-			strings.Join(result.DosageAndAdmin, " "))
-		medEmbedding := generateEmbedding(text)
-
-		// Convert slice to string
-		medEmbeddingString, err := float64SliceToString(medEmbedding)
-
-		if err != nil {
-			return fmt.Errorf("❌ Error converting medication embedding to string: %w", err)
-		}
-
-		// Insert vector using STRING_TO_VECTOR
-		_, err = db.Exec("INSERT INTO medicationv (nom, description, pathologie_id, embedding) VALUES (?, ?, ?, STRING_TO_VECTOR(?))", medicament, text, pathologyID, medEmbeddingString)
-		if err != nil {
-			fmt.Println("❌ Error inserting into medicationv table:", err)
-		}
-	}*/
 	return nil
 }
 
