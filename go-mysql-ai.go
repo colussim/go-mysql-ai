@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -18,6 +17,8 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	md "github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/parser"
 	"github.com/ollama/ollama/api"
 	"github.com/sirupsen/logrus"
 )
@@ -30,6 +31,10 @@ const configPath = "config/config.json"
 
 type Response struct {
 	Response string `json:"response"`
+}
+
+type Response1 struct {
+	Response template.HTML `json:"response"`
 }
 
 type OllamaResponse struct {
@@ -83,6 +88,13 @@ var db *sql.DB
 var pathology *Pathology
 var config *Config
 var httpPort int
+
+func markdownToHTML2(markdown string) template.HTML {
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	p := parser.NewWithExtensions(extensions)
+	html := md.ToHTML([]byte(markdown), p, nil)
+	return template.HTML(string(html))
+}
 
 func initDB(config *Config) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
@@ -145,6 +157,15 @@ func sendJSONResponse(w http.ResponseWriter, response Response) {
 	}
 }
 
+func sendJSONResponse2(w http.ResponseWriter, response Response1) {
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Printf("❌ Error encoding response: %v", err)
+		http.Error(w, "❌ Error encoding response", http.StatusInternalServerError)
+	}
+}
+
 func markdownToHTML(w io.Writer, markdown string) error {
 	tmpl, err := template.New("markdown").Parse(strings.ReplaceAll(markdown, "\n", "<br>"))
 	if err != nil {
@@ -180,7 +201,14 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var htmlBuffer bytes.Buffer
+	htmlResponse := markdownToHTML2(responseMessage)
+
+	response := Response1{
+		Response: htmlResponse,
+	}
+	sendJSONResponse2(w, response)
+
+	/*var htmlBuffer bytes.Buffer
 	err = markdownToHTML(&htmlBuffer, responseMessage)
 	if err != nil {
 		log.Printf("Error converting response to HTML: %v", err)
@@ -191,7 +219,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	response := Response{
 		Response: htmlBuffer.String(),
 	}
-	sendJSONResponse(w, response)
+	sendJSONResponse(w, response)*/
 
 	log.Printf("Response sent to client for pathology '%s': %s", extractedPathology, responseMessage)
 
@@ -229,7 +257,9 @@ func generateResponse(input string) (string, error) {
 	}
 
 	// Step 5 : Return the content of the answer
+
 	return response.Content, nil
+
 }
 
 func getPathologyEmbedding(pathology string) ([]float64, error) {
@@ -341,7 +371,7 @@ func sendToOllama(prompt string) (*OllamaResponse, error) {
 
 	// Create a chat request
 	request := api.ChatRequest{
-		Model: config.Model.Name,
+		Model: "qwen2.5:0.5b",
 		Messages: []api.Message{
 			{Role: "system", Content: systemInstructions},
 			{Role: "user", Content: prompt},

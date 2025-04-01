@@ -104,23 +104,7 @@
                 }, 2000); // 2 second delay before displaying the response
             }
 
-          /*  if (userInput) {
-                // Add user message
-                document.getElementById('chat-box').innerHTML += 
-                    `<div class="message user-message"><i class="fas fa-user"></i> <strong>You:</strong> ${userInput}</div>`;
-                document.getElementById('user-input').value = '';
 
-                fetch('/chat?message=' + encodeURIComponent(userInput))
-                    .then(response => response.json())
-                    .then(data => {
-                        //Add bot response
-                        document.getElementById('chat-box').innerHTML += 
-                            `<div class="message bot-message"><i class="fas fa-robot"></i> <strong>Bot:</strong> ${data.response}</div>`;
-                        
-                        // Add a separator line for the next discussion
-                        document.getElementById('chat-box').innerHTML += '<div class="discussion-separator"></div>';
-                    });
-            }*/
         };
 
         document.getElementById('clear-button').onclick = function() {

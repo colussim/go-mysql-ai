@@ -264,6 +264,18 @@ To stop the local HTTP service, press the Ctrl+C keys.
 
 ![chatbox](imgs/chatbox3.png)
 
+Now, please enter your condition in the chat, for example: 'I have a headache...' and Ollama will respond with a list of medications that may address your condition (maximum of 10 medications).
+
+---
+
+📢 I would like to emphasize that this is not a fully developed chatbot, and there is much to be done to improve it. Please keep in mind that we are in a demo environment, and this is just to demonstrate the interaction between the ability to store vector fields in MySQL and to interact with Ollama.
+
+---
+
+## Conclusion
+
+In this demonstration, we showcase how to enhance the knowledge of a large language model (Ollama) to obtain answers to domain-specific questions. By combining the strengths of language models with vector storage in MySQL, you can create advanced applications that go beyond generic responses. This project highlights the potential of integrating AI with structured databases to provide meaningful insights and recommendations tailored to specific health conditions.
+
 
 ---
 
