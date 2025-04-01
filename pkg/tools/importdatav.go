@@ -28,6 +28,12 @@ type Config struct {
 	Pathologie struct {
 		File string `json:"file"`
 	} `json:"pathologie"`
+	Model struct {
+		Name string `json:"name"`
+	} `json:"model"`
+	Chatbotport struct {
+		Port int `json:"port"`
+	} `json:"chatbotport"`
 }
 
 type PathologyDetail struct {
@@ -87,7 +93,7 @@ func LoadPathologies(filename string) (*Pathology, error) {
 	return &pathologies, nil
 }
 
-func generateEmbedding(text string) []float64 {
+func generateEmbedding(text, model string) []float64 {
 
 	// Get the Ollama host from the environment variable or use the default local host
 	ollamaHost := os.Getenv("OLLAMA_HOST")
@@ -102,7 +108,7 @@ func generateEmbedding(text string) []float64 {
 	// Use the qwen2.5:0.5b model to generate embeddings
 
 	req := &api.EmbeddingRequest{
-		Model:  "qwen2.5:0.5b",
+		Model:  model,
 		Prompt: text,
 	}
 	resp, err := client.Embeddings(context.Background(), req)
@@ -156,7 +162,7 @@ func float64SliceToString(values []float64) (string, error) {
 	return "[" + strings.Join(str, ",") + "]", nil
 }
 
-func InsertData(db *sql.DB, pathology string, details PathologyDetail, data OpenFDAResponse) error {
+func InsertData(db *sql.DB, pathology string, details PathologyDetail, data OpenFDAResponse, model string) error {
 
 	embeddingText := fmt.Sprintf("%s. Description: %s. Symptoms: %s. Treatments: %s.",
 		pathology,
@@ -164,7 +170,7 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 		strings.Join(details.Symptoms, ", "),
 		strings.Join(details.Treatments, ", "))
 
-	pathologyEmbedding := generateEmbedding(embeddingText)
+	pathologyEmbedding := generateEmbedding(embeddingText, model)
 
 	// Convert slice to string
 	pathologyEmbeddingString, err := float64SliceToString(pathologyEmbedding)
@@ -213,7 +219,7 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 			packageLabel,
 		)
 
-		medEmbedding := generateEmbedding(text)
+		medEmbedding := generateEmbedding(text, model)
 		// Convertir le slice en string
 		medEmbeddingString, err := float64SliceToString(medEmbedding)
 		if err != nil {
@@ -307,7 +313,7 @@ func RunImport(configPath string) error {
 		}
 		details := pathologies.Pathologies[pathology]
 
-		err = InsertData(db, pathology, details, data)
+		err = InsertData(db, pathology, details, data, config.Model.Name)
 		if err != nil {
 			fmt.Println("❌ Error inserting data for pathology:", pathology, err)
 		}

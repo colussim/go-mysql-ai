@@ -16,7 +16,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 ## Features
 
 
-✅ **Data Import:** A Go program extracts drug information related to various pathologies from the OpenFDA API.
+✅ **Data Import:** A Go program extracts drug information related to various pathologies from the OpenFDA API.We retrieve a sample of 50 medications based on the pathology using the following API request on OpenFDA: "'https://api.fda.gov/drug/label.json?search=indications_and_usage:pathology_name AND +exists:openfda.brand_name&limit=50'"
 
 ✅ **Embedding Generation:** The Qwen2.5:0.5b model is used to generate vector representations of pathologies.
 
@@ -24,15 +24,23 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Vector Search with Ollama:** Queries MySQL to retrieve the most relevant drugs based on the generated embeddings.
 
+![steps](imgs/steps.png)
+
+## Vector Storage Definition
+
+Vector storage refers to the method of storing data in a multi-dimensional vector format, which allows for efficient organization and retrieval of information. This approach is particularly beneficial in applications such as artificial intelligence and machine learning, where high-dimensional data representations, or embeddings, are generated for various entities (like images, text, or medications). 
+
+By leveraging vector storage, queries can efficiently search for and retrieve relevant information based on similarity metrics, enabling improved performance in tasks like semantic search or recommendation systems. This method enhances the ability to handle large datasets, facilitates optimized searching, and supports complex analyses, making it an essential component in modern data-driven applications.
+
+
 ## Requirements
 
 - Go (version 1.16 or newer)
-- MySQL server
+- Git
+- MySQL server 9.2
 - Install Ollama on your computer: [download & install](https://ollama.com/download)
 
 Once Ollama is installed, we'll use this model: qwen2.5:0.5b
-
-To load the model, simply run the following command: ollama pull qwen2.5:0.5b (or ollama run qwen2.5:0.5b to interact directly with the CLI)
 
 ## Introduction : Generative AI
 
@@ -45,11 +53,6 @@ One example of a Generative AI application is chatbots that can answer questions
 > You can absolutely run LLMs on your own computer, and contrary to popular belief, you don’t necessarily need a high-end machine with a powerful GPU. There are lighter models that can run on standard laptops or even on a Raspberry Pi.
 
 To do this, you need to choose a model that matches your needs and available resources, and use software that allows you to run it on your device.
-
-Ollama is a lightweight framework designed to run large language models (LLMs) efficiently on local devices. It provides an easy way to download, manage, and execute AI models without requiring cloud-based processing. Ollama optimizes models for performance, allowing them to run on standard laptops and even low-power devices like Raspberry Pi.
-
-With a simple command-line interface and built-in model support, Ollama makes it easy for developers to experiment with LLMs locally while maintaining control over their data and resources.
-
 We're going to use **Ollama**.
 
 ### Ollama
@@ -63,11 +66,22 @@ Ollama lets you interact directly with an LLM via a command line (CLI) or REST A
 ![ollama.png](imgs/ollama.png)
 
 
+
 ## Installation & Usage
 
 I will not detail the installation of MySQL here; we assume that you have a functional instance.
 
-**1. Install Ollama**
+**1. Clone the repository**
+
+```bash
+
+:> git clone https://github.com/colussim/go-mysql-ai.git
+:> go-mysql-ai
+
+```
+
+
+**2. Install Ollama**
 
 First, install Ollama by following the official installation guide  [here](https://ollama.com/download).
 
@@ -96,9 +110,19 @@ ollama pull qwen2.5:0.5b
 
 ```
 
-**1. Create the Database and Tables**
+**3. Create the Database and Tables**
 
 Next, we need to create a MySQL database and the necessary tables to store pathologies and recommended medications, along with their embeddings.
+
+You can use the SQL scripts in the database directory and modify them as needed:
+
+- **create_db_health.sql**: Creates the database.
+
+- **create_table_medication_vector.sql**: Creates the necessary tables.
+
+- **create_users.sql**: Creates the required database user.
+
+
 
 Database Schema :
 
@@ -149,11 +173,97 @@ Medication Embedding Format:
 - "For this medication, Indications: ..., Purpose: ..., Dosage: ..., Warning: ..., Package Label: ..."
 
 
+**4. Configure the Demo**
+
+Modify the file *config/config.json* with your MySQL credentials and the embedding model you want to use. By default, the model is *Qwen2.5:0.5b.*
+
+Example config.json:
+
+```json
+{
+    "mysql": {
+        "user": "health",
+        "password": "XXXXX",
+        "server": "127.0.0.1",
+        "port": "3310",
+        "type_auth": "password"
+    },
+    "pathologie": {
+        "file": "config/pathologies.json"
+    },
+    "model": {
+        "name": "qwen2.5:0.5b"
+    },
+    "chatbotport": {
+        "port": 3001
+    }
+}
 
 
+```
+You can also define your pathologies in the *config/pathologies.json* file.
+Example pathologies.json:
 
- It is written in Go and allows for flexible pathology lists via a configuration file.
+```json
+{
+    "pathologies": {
+        "headache": {
+            "description": "Pain located in the head, scalp, or neck.",
+            "symptoms": [
+                "throbbing pain",
+                "sensitivity to light and sound",
+                "nausea",
+                "vomiting"
+            ],
+            "treatments": [
+                "over-the-counter pain relievers",
+                "rest in a dark room",
+                "hydration"
+            ]
+        },
+        ........
+}
 
+```
+
+**5. Setup Environment**
+
+Run the following command to automatically install all the required modules based on the go.mod and go.sum files:
+
+```bash
+
+:> go mod download
+
+```
+
+## Usage
+
+✅ Run import data :
+
+
+```bash
+
+:> go run importdbv.go
+Import Data...✅ Tables pathologies and medicationv have been cleared.
+2025/04/01 15:30:15 ✅ Import completed in 00:03:00
+2025/04/01 15:30:15 ✅ Data inserted successfully.
+
+```
+
+✅ Run chatbot :
+
+```bash
+
+:> go run go-mysql-ai.go
+INFO[0000] ✅ HTTP service started on port 3001
+```
+
+By default, the chatbot is bound to port 3001. You can change the port either in the configuration file (conf/config.json) under the entry *Chatbotport*, or by specifying the port on the command line with the parameter *-port Your_Port*.
+To stop the local HTTP service, press the Ctrl+C keys.
+
+chatbox1
+
+![chatbox](imgs/chatbox1.png)
 
 
 ---

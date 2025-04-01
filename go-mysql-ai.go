@@ -26,7 +26,6 @@ type TemplateData struct {
 	Messages string
 }
 
-const HTTP_PORT = 3001
 const configPath = "config/config.json"
 
 type Response struct {
@@ -48,6 +47,12 @@ type Config struct {
 	Pathologie struct {
 		File string `json:"file"`
 	} `json:"pathologie"`
+	Model struct {
+		Name string `json:"name"`
+	} `json:"model"`
+	Chatbotport struct {
+		Port int `json:"port"`
+	} `json:"chatbotport"`
 }
 
 type PathologyDetail struct {
@@ -77,6 +82,7 @@ var logger *logrus.Logger
 var db *sql.DB
 var pathology *Pathology
 var config *Config
+var httpPort int
 
 func initDB(config *Config) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
@@ -188,41 +194,8 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	sendJSONResponse(w, response)
 
 	log.Printf("Response sent to client for pathology '%s': %s", extractedPathology, responseMessage)
-	/*response := Response{Response: responseMessage}
-	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "Error encoding response", http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("Response sent to client: %s", responseMessage)
-	//w.Header().Set("Content-Type", "application/json")
-	//json.NewEncoder(w).Encode(Response{Response: responseMessage})*/
-}
-
-/*
-	func generateResponse2(input string) (string, error) {
-		// Récupérer l'embedding de la pathologie
-		embedding, err := getPathologyEmbedding(input)
-		if err != nil {
-			return "", fmt.Errorf("error getting pathology embedding: %w", err)
-		}
-
-		// Recommend medications through Ollama
-		medications, err := recommendMedications(embedding)
-		if err != nil {
-			return "", fmt.Errorf("error recommending medications: %w", err)
-		}
-
-		// Return a formatted response
-		//return fmt.Sprintf("Recommended medications : %s", strings.Join(medications, ", ")), nil
-		//return fmt.Sprintf("Recommended medications : %s", medications), nil
-		return medications.Content, nil
 
 }
-*/
 
 func getPathologyIDByName(pathologyName string) (int, error) {
 	var id int
@@ -234,28 +207,28 @@ func getPathologyIDByName(pathologyName string) (int, error) {
 }
 
 func generateResponse(input string) (string, error) {
-	// Étape 1 : Récupérer l'embedding pour la pathologie
+	// Étape 1 : Recovering embedding for pathology
 	idpath, err := getPathologyIDByName(input)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error getting pathology embedding: %w", err)
 	}
 
-	// Step 2 : Recommander des médicaments en utilisant l'embedding
+	// Step 2 : Recommending drugs using embedding
 	medications, err := findSimilarMedications(idpath, 10)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error recommending medications: %w", err)
 	}
 
-	// Step 3 : Construire un prompt pour Ollama
+	// Step 3 : Building a prompt for Ollama
 	prompt := buildPromptForOllama(input, medications)
 
-	// Step 4 : Envoyer à Ollama et obtenir une réponse
+	// Step 4 : Send to Ollama and get a reply
 	response, err := sendToOllama(prompt)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error sending request to Ollama: %w", err)
 	}
 
-	// Step 5 : Retourner le contenu de la réponse
+	// Step 5 : Return the content of the answer
 	return response.Content, nil
 }
 
@@ -350,25 +323,25 @@ func buildPromptForOllama(pathology string, medications []Medication) string {
 }
 
 func sendToOllama(prompt string) (*OllamaResponse, error) {
-	// Obtenez le serveur Ollama depuis la variable d'environnement ou utilisez l'URL local par défaut
+
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
-		ollamaHost = "http://localhost:11434" // URL par défaut
+		ollamaHost = "http://localhost:11434"
 	}
 	parsedURL, err := url.Parse(ollamaHost)
 	if err != nil {
 		return nil, fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
 	}
 
-	// Créer un client Ollama
+	// Create an Ollama client
 	client := api.NewClient(parsedURL, http.DefaultClient)
 
-	// Instructions système pour le modèle
+	// System instructions for model
 	systemInstructions := "You are an expert pharmacist. Always respond in English. Provide brief and structured answers."
 
-	// Créer la requête de chat
+	// Create a chat request
 	request := api.ChatRequest{
-		Model: "qwen2.5:0.5b",
+		Model: config.Model.Name,
 		Messages: []api.Message{
 			{Role: "system", Content: systemInstructions},
 			{Role: "user", Content: prompt},
@@ -376,7 +349,7 @@ func sendToOllama(prompt string) (*OllamaResponse, error) {
 		Stream: func(b bool) *bool { return &b }(true),
 	}
 
-	// Envoyer la requête de chat à Ollama
+	// Send chat request to Ollama
 	var responseContent strings.Builder
 	err = client.Chat(context.Background(), &request, func(resp api.ChatResponse) error {
 		responseContent.WriteString(resp.Message.Content)
@@ -408,27 +381,23 @@ func init() {
 	if err := initDB(config); err != nil {
 		logger.Fatalf("❌ Error initializing database: %v", err)
 	}
-	//defer db.Close()
+	httpPort = config.Chatbotport.Port
 }
 
 func main() {
 
 	var port string
-	portFlag := flag.String("port", "", fmt.Sprintf("Port on which the server will listen (default is %d)", HTTP_PORT))
+	//httpPort := config.Chatbotport.Port
+	portFlag := flag.String("port", "", fmt.Sprintf("Port on which the server will listen (default is %d)", httpPort))
 
 	flag.Parse()
 	if *portFlag != "" {
 		port = *portFlag
 	} else {
-		port = strconv.Itoa(HTTP_PORT)
+		port = strconv.Itoa(httpPort)
 	}
 
 	logger = logrus.New()
-
-	/*	config, err := LoadConfig("config/config.json")
-		if err != nil {
-			logger.Fatalf("❌ Error loading configuration: %v", err)
-		}*/
 
 	fs := http.FileServer(http.Dir("dist"))
 
