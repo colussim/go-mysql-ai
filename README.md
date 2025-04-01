@@ -283,11 +283,15 @@ In this demonstration, we showcase how to enhance the knowledge of a large langu
 
 ## ✅ Ressources
 
-[OpenFDA](https://open.fda.gov/)
+[MySQL VECTOR Type](https://dev.mysql.com/doc/refman/9.2/en/vector.html)
+
+[MySQL Vector Functions](https://dev.mysql.com/doc/refman/9.2/en/vector-functions.html)
 
 [Ollama](https://ollama.com/)
 
 [Ollama Embedding models](https://ollama.com/blog/embedding-models)
 
 [Ollama API exemple](https://github.com/ollama/ollama/tree/main/api/examples)
+
+[OpenFDA](https://open.fda.gov/)
 
