@@ -81,7 +81,7 @@ type Medication struct {
 }
 
 // Main html page: index.html
-var tpl = template.Must(template.ParseFiles("chat.html"))
+var tpl = template.Must(template.ParseFiles("dist/templates/chat.html"))
 
 var logger *logrus.Logger
 var db *sql.DB
