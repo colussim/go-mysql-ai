@@ -30,7 +30,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 Vector storage refers to the method of storing data in a multi-dimensional vector format, which allows for efficient organization and retrieval of information. This approach is particularly beneficial in applications such as artificial intelligence and machine learning, where high-dimensional data representations, or embeddings, are generated for various entities (like images, text, or medications). 
 
-By leveraging vector storage, queries can efficiently search for and retrieve relevant information based on similarity metrics, enabling improved performance in tasks like semantic search or recommendation systems. This method enhances the ability to handle large datasets, facilitates optimized searching, and supports complex analyses, making it an essential component in modern data-driven applications.
+By leveraging vector storage, queries can efficiently search for and retrieve relevant information based on similarity metrics (or [similarity measure](https://en.wikipedia.org/wiki/Similarity_measure)), enabling improved performance in tasks like semantic search or recommendation systems. This method enhances the ability to handle large datasets, facilitates optimized searching, and supports complex analyses, making it an essential component in modern data-driven applications.
 
 
 ## Requirements
