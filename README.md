@@ -22,7 +22,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Storage in MySQL:** Data is stored in a MySQL database with a vector field for optimized search.
 
-✅ **Vector Search with Ollama:** Queries MySQL to retrieve the most relevant drugs based on the generated embeddings.
+✅ **Vector Search in MySQL:** Queries MySQL to retrieve the most relevant drugs based on the generated embeddings.
 
 ✅ **Vector search in Go:** calculate the cosine similarity between the query embedding and those of the selected drugs to find the most relevant ones.
 
