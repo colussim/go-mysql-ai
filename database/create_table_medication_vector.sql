@@ -6,7 +6,7 @@ drop table pathologies;
 CREATE TABLE pathologies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) UNIQUE,
-    embedding VECTOR(896) 
+    embedding VECTOR(10000) 
 ) TABLESPACE health_ts;
 
 
@@ -25,7 +25,7 @@ CREATE TABLE medicationv (
     pregnancy_or_breast_feeding TEXT,
     package_label_principal_display_panel TEXT,
     indications_and_usage TEXT,
-    embedding VECTOR(896),  
+    embedding VECTOR(10000),  
     CONSTRAINT fk_pathologie FOREIGN KEY (pathologie_id) REFERENCES pathologies(id)
 ) TABLESPACE health_ts;
 

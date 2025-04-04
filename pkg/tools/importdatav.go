@@ -29,7 +29,8 @@ type Config struct {
 		File string `json:"file"`
 	} `json:"pathologie"`
 	Model struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Prompt string `json:"prompt"`
 	} `json:"model"`
 	Chatbotport struct {
 		Port int `json:"port"`
@@ -178,10 +179,11 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 		return fmt.Errorf("❌ Error converting pathology embedding to string: %w", err)
 	}
 
+	size := len(pathologyEmbeddingString)
 	// Insert vector using STRING_TO_VECTOR
 	_, err = db.Exec("INSERT INTO pathologies (name, embedding) VALUES (?, STRING_TO_VECTOR(?))", pathology, pathologyEmbeddingString)
 	if err != nil {
-		return fmt.Errorf("❌ Error inserting into pathologies table: %w", err)
+		return fmt.Errorf("❌ Error inserting into pathologies table: %w - size vector %d: ", err, size)
 	}
 
 	var pathologyID int
@@ -210,7 +212,8 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 		packageLabel := strings.Join(result.PackageLabelPRincipalDisplayPanel, ". ")
 
 		//text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Active Ingredients: %s. Dosage: %s. Warnings: %s. Package Label: %s",
-		text := fmt.Sprintf("Medication: %s. Indications: %s. Purpose: %s. Dosage: %s. Warnings: %s. Package Label: %s",
+		text := fmt.Sprintf("For this pathology: %s,Medication: %s. Indications: %s. Purpose: %s. Dosage: %s. Warnings: %s. Package Label: %s",
+			pathology,
 			medicament,
 			strings.Join(result.IndicationsAndUsage, ", "),
 			strings.Join(result.Purpose, ", "),
@@ -222,6 +225,9 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 		medEmbedding := generateEmbedding(text, model)
 		// Convertir le slice en string
 		medEmbeddingString, err := float64SliceToString(medEmbedding)
+
+		size := len(pathologyEmbeddingString)
+
 		if err != nil {
 			return fmt.Errorf("❌ Error converting medication embedding to string: %w", err)
 		}
@@ -252,10 +258,10 @@ func InsertData(db *sql.DB, pathology string, details PathologyDetail, data Open
 			pregnancy,
 			packageLabel,
 			indications,
-			medEmbeddingString, // Vecteur d'embedding converti
+			medEmbeddingString,
 		)
 		if err != nil {
-			return fmt.Errorf("❌ Error inserting medication data: %w", err)
+			return fmt.Errorf("❌ Error inserting medication data: %w - size vector %d: ", err, size)
 		}
 	}
 	return nil

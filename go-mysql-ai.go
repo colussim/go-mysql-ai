@@ -7,12 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -53,7 +54,8 @@ type Config struct {
 		File string `json:"file"`
 	} `json:"pathologie"`
 	Model struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Prompt string `json:"prompt"`
 	} `json:"model"`
 	Chatbotport struct {
 		Port int `json:"port"`
@@ -71,13 +73,14 @@ type Pathology struct {
 }
 
 type Medication struct {
-	DrugName     string    `json:"drug_name"`
-	Indications  string    `json:"indications_and_usage"`
-	Purpose      string    `json:"purpose"`
-	Dosage       string    `json:"dosage_and_administration"`
-	Warnings     string    `json:"warnings"`
-	PackageLabel string    `json:"package_label"`
-	Embedding    []float64 `json:"embedding"`
+	DrugName        string    `json:"drug_name"`
+	Indications     string    `json:"indications_and_usage"`
+	Purpose         string    `json:"purpose"`
+	Dosage          string    `json:"dosage_and_administration"`
+	Warnings        string    `json:"warnings"`
+	PackageLabel    string    `json:"package_label"`
+	Embedding       []float64 `json:"embedding"`
+	SimilarityScore float64
 }
 
 // Main html page: index.html
@@ -88,6 +91,23 @@ var db *sql.DB
 var pathology *Pathology
 var config *Config
 var httpPort int
+
+func CosineSimilarity(vec1, vec2 []float64) float64 {
+	var dotProduct, normA, normB float64
+
+	for i := range vec1 {
+		dotProduct += vec1[i] * vec2[i]
+		normA += vec1[i] * vec1[i]
+		normB += vec2[i] * vec2[i]
+	}
+
+	// Avoid division by zero
+	if normA == 0 || normB == 0 {
+		return 0.0
+	}
+
+	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
+}
 
 func markdownToHTML2(markdown string) template.HTML {
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
@@ -166,15 +186,6 @@ func sendJSONResponse2(w http.ResponseWriter, response Response1) {
 	}
 }
 
-func markdownToHTML(w io.Writer, markdown string) error {
-	tmpl, err := template.New("markdown").Parse(strings.ReplaceAll(markdown, "\n", "<br>"))
-	if err != nil {
-		return err
-	}
-
-	return tmpl.Execute(w, nil)
-}
-
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	tpl.Execute(w, nil)
 }
@@ -208,19 +219,6 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sendJSONResponse2(w, response)
 
-	/*var htmlBuffer bytes.Buffer
-	err = markdownToHTML(&htmlBuffer, responseMessage)
-	if err != nil {
-		log.Printf("Error converting response to HTML: %v", err)
-		http.Error(w, "Error converting response to HTML", http.StatusInternalServerError)
-		return
-	}
-
-	response := Response{
-		Response: htmlBuffer.String(),
-	}
-	sendJSONResponse(w, response)*/
-
 	log.Printf("Response sent to client for pathology '%s': %s", extractedPathology, responseMessage)
 
 }
@@ -234,32 +232,41 @@ func getPathologyIDByName(pathologyName string) (int, error) {
 	return id, nil
 }
 
-func generateResponse(input string) (string, error) {
-	// Étape 1 : Recovering embedding for pathology
-	idpath, err := getPathologyIDByName(input)
+func getPathologyIDAndEmbeddingByName(pathologyName string) (int, string, error) {
+	var id int
+	var embedding string
+
+	// SQL query to retrieve ID and embedding
+	err := db.QueryRow("SELECT id, VECTOR_TO_STRING(embedding) FROM pathologies WHERE name = ?", strings.ToLower(pathologyName)).Scan(&id, &embedding)
 	if err != nil {
-		return "", fmt.Errorf("❌ Error getting pathology embedding: %w", err)
+		return 0, "", fmt.Errorf("❌ Error retrieving pathology ID and embedding: %w", err)
 	}
 
-	// Step 2 : Recommending drugs using embedding
-	medications, err := findSimilarMedications(idpath, 10)
+	// RReturns the ID and embedding as a string
+	return id, embedding, nil
+}
+
+func generateResponse(pathologyName string) (string, error) {
+	// Step 1: Retrieve the pathology ID
+	pathologyID, embeddingP, err := getPathologyIDAndEmbeddingByName(pathologyName)
 	if err != nil {
-		return "", fmt.Errorf("❌ Error recommending medications: %w", err)
+		return "", fmt.Errorf("❌ Error getting pathology ID: %w", err)
 	}
 
-	// Step 3 : Building a prompt for Ollama
-	prompt := buildPromptForOllama(input, medications)
+	// Step 2: Retrieve the embeddings for medications
+	embeddings, err := findSimilarMedications(pathologyName, pathologyID, 3, embeddingP)
+	if err != nil {
+		return "", fmt.Errorf("❌ Error retrieving medication embeddings: %w", err)
+	}
 
-	// Step 4 : Send to Ollama and get a reply
-	response, err := sendToOllama(prompt)
+	// Step 3: Send the embeddings to Ollama and get a reply
+	response, err := sendToOllama(embeddings, pathologyName)
 	if err != nil {
 		return "", fmt.Errorf("❌ Error sending request to Ollama: %w", err)
 	}
 
-	// Step 5 : Return the content of the answer
-
-	return response.Content, nil
-
+	// Step 4: Return the content of the answer
+	return response, nil
 }
 
 func getPathologyEmbedding(pathology string) ([]float64, error) {
@@ -279,15 +286,27 @@ func getPathologyEmbedding(pathology string) ([]float64, error) {
 	return embedding, nil
 }
 
-func findSimilarMedications(pathologyID int, limit int) ([]Medication, error) {
+func findSimilarMedications(pathologyName string, pathologyID int, limit int, embeddingP string) ([]Medication, error) {
+
+	pathologyEmbedding, err := stringToFloat64Slice(embeddingP)
+	if err != nil {
+		return nil, fmt.Errorf("❌ Error converting pathology embedding to float64 slice: %w", err)
+	}
 
 	query := `
-	SELECT drug_name,purpose,warnings,dosage_and_administration,package_label_principal_display_panel,indications_and_usage,VECTOR_TO_STRING(embedding)
+    SELECT 
+		drug_name,
+		purpose,
+		warnings,
+		dosage_and_administration,
+		package_label_principal_display_panel,
+		indications_and_usage,
+		VECTOR_TO_STRING(embedding)
 	FROM medicationv
-	WHERE pathologie_id = ?
-	LIMIT ?`
+	WHERE pathologie_id = ?`
 
-	rows, err := db.Query(query, pathologyID, limit)
+	//rows, err := db.Query(query, pathologyID, limit)
+	rows, err := db.Query(query, pathologyID)
 	if err != nil {
 		return nil, fmt.Errorf("❌ Error querying medications for pathology: %w", err)
 	}
@@ -298,18 +317,44 @@ func findSimilarMedications(pathologyID int, limit int) ([]Medication, error) {
 		var med Medication
 		var embeddingString string
 
-		if err := rows.Scan(&med.DrugName, &med.Indications, &med.Purpose, &med.Dosage, &med.Warnings, &med.PackageLabel, &embeddingString); err != nil {
+		if err := rows.Scan(&med.DrugName, &med.Purpose, &med.Warnings, &med.Dosage, &med.PackageLabel, &med.Indications, &embeddingString); err != nil {
 			return nil, fmt.Errorf("❌ Error scanning row: %w", err)
 		}
 
-		// Convertir l'embedding de string à slice de float64
+		// Convert embedding from string to float64 slice
 		med.Embedding, err = stringToFloat64Slice(embeddingString)
 		if err != nil {
 			return nil, fmt.Errorf("❌ Error converting medication embedding to float64 slice: %w", err)
 		}
 
+		// Add similarity score for debugging if needed
+		med.SimilarityScore = CosineSimilarity(pathologyEmbedding, med.Embedding)
+
 		medications = append(medications, med)
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("❌ Error iterating over rows: %w", err)
+	}
+
+	// Sort drugs by similarity score
+	sort.Slice(medications, func(i, j int) bool {
+		return medications[i].SimilarityScore > medications[j].SimilarityScore
+	})
+
+	// View best medicines
+	/*	fmt.Println("Top Medications for Pathology: ", pathologyName)
+		for i := 0; i < len(medications) && i < limit; i++ {
+			med := medications[i]
+			fmt.Printf("Rank: %d\n", i+1)
+			fmt.Printf("Medication Name: %s\n", med.DrugName)
+			fmt.Printf("Similarity Score: %.4f\n", med.SimilarityScore)
+			fmt.Printf("Purpose: %s\n", med.Purpose)
+			fmt.Printf("Indications: %s\n", med.Indications)
+			fmt.Printf("Dosage: %s\n", med.Dosage)
+			fmt.Println("-----")
+		}*/
+
 	return medications, nil
 }
 
@@ -337,68 +382,80 @@ func stringToFloat64Slice(embeddingString string) ([]float64, error) {
 }
 
 func buildPromptForOllama(pathology string, medications []Medication) string {
-	prompt := fmt.Sprintf("For the pathology: '%s', the following medications are available:\n", pathology)
+	prompt := fmt.Sprintf("For this pathology: %s, the following medications are available:\n", pathology)
 	for _, med := range medications {
 		prompt += fmt.Sprintf(
-			"- Medication Name: %s\n  Indications: %s\n  Purpose: %s\n  Dosage: %s\n  Package Label: %s\n",
+			"- Medication Name: %s\n  Indications: %s\n  Purpose: %s\n  Dosage: %s\n  Warnings: %s\n  Package Label: %s\n",
 			med.DrugName,
 			med.Indications,
 			med.Purpose,
 			med.Dosage,
 			med.Warnings,
-			med.PackageLabel)
+			med.PackageLabel,
+		)
 	}
-	prompt += "Based on the above medications, please provide additional recommendations."
+	prompt += config.Model.Prompt
+	//prompt += "Please analyze the medications listed below and recommend at least two for this pathology, displaying dosage and indications."
 	return prompt
 }
 
-func sendToOllama(prompt string) (*OllamaResponse, error) {
+func decodeEmbeddingToText(embedding []float64) string {
+	// Example: Use a simple mapping for demonstration purposes
+	// In a real-world scenario, you would use a model or more complex logic
+	if len(embedding) == 0 {
+		return "No embedding provided."
+	}
 
+	// Example logic: Check the first value of the embedding
+	if embedding[0] > 0.5 {
+		return "This embedding corresponds to a positive recommendation."
+	} else if embedding[0] < -0.5 {
+		return "This embedding corresponds to a negative recommendation."
+	} else {
+		return "This embedding corresponds to a neutral recommendation."
+	}
+}
+
+func sendToOllama(medicaments []Medication, pathology string) (string, error) {
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
 		ollamaHost = "http://localhost:11434"
 	}
 	parsedURL, err := url.Parse(ollamaHost)
 	if err != nil {
-		return nil, fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
+		return "", fmt.Errorf("❌ Invalid Ollama host URL: %w", err)
 	}
 
-	// Create an Ollama client
 	client := api.NewClient(parsedURL, http.DefaultClient)
 
-	// System instructions for model
-	systemInstructions := "You are an expert pharmacist. Always respond in English. Provide brief and structured answers."
+	prompt := buildPromptForOllama(pathology, medicaments)
 
-	// Create a chat request
-	request := api.ChatRequest{
-		Model: "qwen2.5:0.5b",
+	chatRequest := api.ChatRequest{
+		Model: config.Model.Name,
 		Messages: []api.Message{
-			{Role: "system", Content: systemInstructions},
+			{Role: "system", Content: "You are an expert pharmacist. Always respond in English."},
 			{Role: "user", Content: prompt},
 		},
 		Stream: func(b bool) *bool { return &b }(true),
 	}
 
-	// Send chat request to Ollama
 	var responseContent strings.Builder
-	err = client.Chat(context.Background(), &request, func(resp api.ChatResponse) error {
+	err = client.Chat(context.Background(), &chatRequest, func(resp api.ChatResponse) error {
 		responseContent.WriteString(resp.Message.Content)
 		return nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("❌ Error calling Ollama API: %w", err)
+		return "", fmt.Errorf("❌ Error calling Ollama API: %w", err)
 	}
 
-	return &OllamaResponse{
-		Content: responseContent.String(),
-	}, nil
+	return responseContent.String(), nil
 }
 
 func init() {
 	var err error
 
-	config, err := LoadConfig(configPath)
+	config, err = LoadConfig(configPath)
 	if err != nil {
 		logger.Fatal("❌ Error eading config file:", err)
 	}
@@ -417,7 +474,6 @@ func init() {
 func main() {
 
 	var port string
-	//httpPort := config.Chatbotport.Port
 	portFlag := flag.String("port", "", fmt.Sprintf("Port on which the server will listen (default is %d)", httpPort))
 
 	flag.Parse()

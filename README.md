@@ -208,7 +208,8 @@ Example config.json:
         "file": "config/pathologies.json"
     },
     "model": {
-        "name": "qwen2.5:0.5b"
+        "name": "qwen2.5:0.5b",
+        "prompt": "Please analyze the medications listed below and recommend..."
     },
     "chatbotport": {
         "port": 3001
