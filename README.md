@@ -24,6 +24,14 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Vector Search with Ollama:** Queries MySQL to retrieve the most relevant drugs based on the generated embeddings.
 
+✅ **Vector search in Go:** calculate the cosine similarity between the query embedding and those of the selected drugs to find the most relevant ones.
+
+✅ **Creating the Ollama prompt:** use the text fields from the table for the most relevant identified drugs.
+
+✅ **Send:** submit it to Ollama to generate the response
+
+> 📌 I have not decoded the embeddings to create the prompt for Ollama, as I believe it is unnecessary because embeddings are primarily useful for search and similarity comparison. However, once you have identified the relevant drugs, using the original text data for the prompt is a perfectly valid and often preferable approach. I will test by sending the embeddings directly to Ollama with a specific model.
+
 ![steps](imgs/steps.png)
 
 ## Vector Storage Definition
@@ -62,6 +70,9 @@ Ollama is a lightweight framework designed to run large language models (LLMs) e
 With a simple command-line interface and built-in model support, Ollama makes it easy for developers to experiment with LLMs locally while maintaining control over their data and resources.
 
 Ollama lets you interact directly with an LLM via a command line (CLI) or REST API. I am interested in using only the REST API for this demonstration.
+
+Ollama does not have a native feature to directly take an embedding vector as input and use it in its response generation. Ollama is designed to accept plain text input, not numerical vectors. However, there are models like  [**mxbai-embed-large**](https://ollama.com/library/mxbai-embed-large) that allow sending embeddings to Ollama.That will be the next step: integrating this model.
+
 
 ![ollama.png](imgs/ollama.png)
 
@@ -161,6 +172,9 @@ CREATE TABLE medicationv (
 
 
 ```
+
+> 📌 If you change the model, you will probably need to increase the size of the VECTOR field: embedding.
+
 
 **🧠 Embedding Structure**
 
@@ -274,10 +288,16 @@ Now, please enter your condition in the chat, for example: 'I have a headache...
 
 ---
 
+
 ## Conclusion
 
 In this demonstration, we showcase how to enhance the knowledge of a large language model (Ollama) to obtain answers to domain-specific questions. By combining the strengths of language models with vector storage in MySQL, you can create advanced applications that go beyond generic responses. This project highlights the potential of integrating AI with structured databases to provide meaningful insights and recommendations tailored to specific health conditions.
 
+---
+
+### Future Features
+
+Implement the **mxbai-embed-large** model to work directly with embeddings.
 
 ---
 
