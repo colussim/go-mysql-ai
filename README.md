@@ -18,7 +18,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Data Import:** A Go program extracts drug information related to various pathologies from the OpenFDA API.We retrieve a sample of 50 medications based on the pathology using the following API request on OpenFDA: "'https://api.fda.gov/drug/label.json?search=indications_and_usage:pathology_name AND +exists:openfda.brand_name&limit=50'"
 
-✅ **Embedding Generation:** The Qwen2.5:0.5b model is used to generate vector representations of pathologies.
+✅ **Embedding Generation:** The Qwen2.5:0.5b model is used to generate vector representations of drug-related pathologies.
 
 ✅ **Storage in MySQL:** Data is stored in a MySQL database with a vector field for optimized search.
 
