@@ -13,39 +13,10 @@ import (
 	"os"
 	"strings"
 
+	configPkg "github.com/colussim/go-mysql-ai/pkg/config"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ollama/ollama/api"
 )
-
-type Config struct {
-	MySQL struct {
-		User     string `json:"user"`
-		Password string `json:"password"`
-		Server   string `json:"server"`
-		Port     string `json:"port"`
-		TypeAuth string `json:"type_auth"`
-	} `json:"mysql"`
-	Pathologie struct {
-		File string `json:"file"`
-	} `json:"pathologie"`
-	Model struct {
-		Name   string `json:"name"`
-		Prompt string `json:"prompt"`
-	} `json:"model"`
-	Chatbotport struct {
-		Port int `json:"port"`
-	} `json:"chatbotport"`
-}
-
-type PathologyDetail struct {
-	Description string   `json:"description"`
-	Symptoms    []string `json:"symptoms"`
-	Treatments  []string `json:"treatments"`
-}
-
-type Pathology struct {
-	Pathologies map[string]PathologyDetail `json:"pathologies"`
-}
 
 type OpenFDAResponse struct {
 	Results []struct {
@@ -69,30 +40,6 @@ var (
 	FALSE = false
 	TRUE  = true
 )
-
-func LoadConfig(filename string) (*Config, error) {
-	file, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var config Config
-	if err := json.Unmarshal(file, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-func LoadPathologies(filename string) (*Pathology, error) {
-	file, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var pathologies Pathology
-	if err := json.Unmarshal(file, &pathologies); err != nil {
-		return nil, err
-	}
-	return &pathologies, nil
-}
 
 func generateEmbedding(text, model string) []float64 {
 
@@ -163,7 +110,7 @@ func float64SliceToString(values []float64) (string, error) {
 	return "[" + strings.Join(str, ",") + "]", nil
 }
 
-func InsertData(db *sql.DB, pathology string, details PathologyDetail, data OpenFDAResponse, model string) error {
+func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail, data OpenFDAResponse, model string) error {
 
 	embeddingText := fmt.Sprintf("%s. Description: %s. Symptoms: %s. Treatments: %s.",
 		pathology,
@@ -286,12 +233,12 @@ func initDatabase(db *sql.DB) error {
 }
 
 func RunImport(configPath string) error {
-	config, err := LoadConfig(configPath)
+	config, err := configPkg.LoadConfig(configPath)
 	if err != nil {
 		fmt.Println("❌ Error reading config file:", err)
 		return err
 	}
-	pathologies, err := LoadPathologies(config.Pathologie.File)
+	pathologies, err := configPkg.LoadPathologies(config.Pathologie.File)
 	if err != nil {
 		fmt.Println("❌ Error parsing JSON contents of file pathologies:", err)
 		return err

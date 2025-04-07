@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	configPkg "github.com/colussim/go-mysql-ai/pkg/config"
 	_ "github.com/go-sql-driver/mysql"
 	md "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
@@ -42,36 +43,6 @@ type OllamaResponse struct {
 	Content string `json:"content"`
 }
 
-type Config struct {
-	MySQL struct {
-		User     string `json:"user"`
-		Password string `json:"password"`
-		Server   string `json:"server"`
-		Port     string `json:"port"`
-		TypeAuth string `json:"type_auth"`
-	} `json:"mysql"`
-	Pathologie struct {
-		File string `json:"file"`
-	} `json:"pathologie"`
-	Model struct {
-		Name   string `json:"name"`
-		Prompt string `json:"prompt"`
-	} `json:"model"`
-	Chatbotport struct {
-		Port int `json:"port"`
-	} `json:"chatbotport"`
-}
-
-type PathologyDetail struct {
-	Description string   `json:"description"`
-	Symptoms    []string `json:"symptoms"`
-	Treatments  []string `json:"treatments"`
-}
-
-type Pathology struct {
-	Pathologies map[string]PathologyDetail `json:"pathologies"`
-}
-
 type Medication struct {
 	DrugName        string    `json:"drug_name"`
 	Indications     string    `json:"indications_and_usage"`
@@ -88,8 +59,8 @@ var tpl = template.Must(template.ParseFiles("dist/templates/chat.html"))
 
 var logger *logrus.Logger
 var db *sql.DB
-var pathology *Pathology
-var config *Config
+var pathology *configPkg.Pathology
+var config *configPkg.Config
 var httpPort int
 
 func CosineSimilarity(vec1, vec2 []float64) float64 {
@@ -116,7 +87,7 @@ func markdownToHTML2(markdown string) template.HTML {
 	return template.HTML(string(html))
 }
 
-func initDB(config *Config) error {
+func initDB(config *configPkg.Config) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
 	var err error
 	db, err = sql.Open("mysql", dsn)
@@ -130,30 +101,6 @@ func initDB(config *Config) error {
 	}
 
 	return nil
-}
-
-func LoadConfig(filename string) (*Config, error) {
-	file, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var config Config
-	if err := json.Unmarshal(file, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-func LoadPathologies(filename string) (*Pathology, error) {
-	file, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var pathologies Pathology
-	if err := json.Unmarshal(file, &pathologies); err != nil {
-		return nil, err
-	}
-	return &pathologies, nil
 }
 
 func extractPathology(input string) string {
@@ -455,11 +402,11 @@ func sendToOllama(medicaments []Medication, pathology string) (string, error) {
 func init() {
 	var err error
 
-	config, err = LoadConfig(configPath)
+	config, err = configPkg.LoadConfig(configPath)
 	if err != nil {
 		logger.Fatal("❌ Error eading config file:", err)
 	}
-	pathology, err = LoadPathologies(config.Pathologie.File)
+	pathology, err = configPkg.LoadPathologies(config.Pathologie.File)
 	if err != nil {
 		logger.Fatal("❌ Error loading config pathologies:", err)
 	}
