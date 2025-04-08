@@ -170,7 +170,7 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 		)
 
 		medEmbedding := generateEmbedding(text, model)
-		// Convertir le slice en string
+		// Convert slice to string
 		medEmbeddingString, err := float64SliceToString(medEmbedding)
 
 		size := len(pathologyEmbeddingString)
@@ -179,7 +179,7 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 			return fmt.Errorf("❌ Error converting medication embedding to string: %w", err)
 		}
 
-		// Insertion dans la base de données
+		// atabase insertion
 		_, err = db.Exec(`INSERT INTO medicationv (
             pathologie_id,
 			drug_name,

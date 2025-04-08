@@ -189,7 +189,7 @@ func getPathologyIDAndEmbeddingByName(pathologyName string) (int, string, error)
 		return 0, "", fmt.Errorf("❌ Error retrieving pathology ID and embedding: %w", err)
 	}
 
-	// RReturns the ID and embedding as a string
+	// Returns the ID and embedding as a string
 	return id, embedding, nil
 }
 

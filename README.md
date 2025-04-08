@@ -30,7 +30,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Send:** submit it to Ollama to generate the response
 
-> 📌 I have not decoded the embeddings to create the prompt for Ollama, as I believe it is unnecessary because embeddings are primarily useful for search and similarity comparison. However, once you have identified the relevant drugs, using the original text data for the prompt is a perfectly valid and often preferable approach. I will test by sending the embeddings directly to Ollama with a specific model.
+> 📌 I have not decoded the embeddings to create the prompt for Ollama, as I believe it is unnecessary because embeddings are primarily useful for search and similarity comparison. However, once you have identified the relevant drugs, using the original text data for the prompt is a perfectly valid and often preferable approach. 
 
 ![steps](imgs/steps.png)
 
