@@ -8,7 +8,7 @@ This project is a demonstration of how MySQL and its vector field can be leverag
 
 ## Objective
 
-The goal of this demonstration is to import drug data from the OpenFDA API and use an embedding model of type Qwen2.5:0.5b. These embeddings are then submitted to Ollama, which performs a vector search in MySQL to return the most relevant drugs based on the queried pathologies.
+The goal of this demonstration is to import drug data from the OpenFDA API and use an embedding model of type mxbai-embed-large. These embeddings are then submitted to Ollama, which performs a vector search in MySQL to return the most relevant drugs based on the queried pathologies.
 
 🚨 **Attention:** This project is just a demonstration of what can be done with MySQL and AI. Its purpose is purely educational and for demonstration purposes only. It is in no way an application that will diagnose or treat any medical condition, nor provide medication recommendations
 
@@ -18,7 +18,7 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 
 ✅ **Data Import:** A Go program extracts drug information related to various pathologies from the OpenFDA API.We retrieve a sample of 50 medications based on the pathology using the following API request on OpenFDA: "'https://api.fda.gov/drug/label.json?search=indications_and_usage:pathology_name AND +exists:openfda.brand_name&limit=50'"
 
-✅ **Embedding Generation:** The Qwen2.5:0.5b model is used to generate vector representations of drug-related pathologies.
+✅ **Embedding Generation:** The mxbai-embed-large model is used to generate vector representations of drug-related pathologies.
 
 ✅ **Storage in MySQL:** Data is stored in a MySQL database with a vector field for optimized search.
 
@@ -27,10 +27,11 @@ The goal of this demonstration is to import drug data from the OpenFDA API and u
 ✅ **Vector search in Go:** calculate the cosine similarity between the query embedding and those of the selected drugs to find the most relevant ones.
 
 ✅ **Creating the Ollama prompt:** use the text fields from the table for the most relevant identified drugs.
+The Qwen2.5:0.5b model is used to generate the prompt for the Olama request in the Chat box.
 
 ✅ **Send:** submit it to Ollama to generate the response
 
-> 📌 I have not decoded the embeddings to create the prompt for Ollama, as I believe it is unnecessary because embeddings are primarily useful for search and similarity comparison. However, once you have identified the relevant drugs, using the original text data for the prompt is a perfectly valid and often preferable approach. I will test by sending the embeddings directly to Ollama with a specific model.
+> 📌 I have not decoded the embeddings to create the prompt for Ollama, as I believe it is unnecessary because embeddings are primarily useful for search and similarity comparison. However, once you have identified the relevant drugs, using the original text data for the prompt is a perfectly valid and often preferable approach. 
 
 ![steps](imgs/steps.png)
 
@@ -48,7 +49,7 @@ By leveraging vector storage, queries can efficiently search for and retrieve re
 - MySQL server 9.2
 - Install Ollama on your computer: [download & install](https://ollama.com/download)
 
-Once Ollama is installed, we'll use this model: qwen2.5:0.5b
+Once Ollama is installed, we'll use these models: mxbai-embed-large and qwen2.5:0.5b
 
 ## Introduction : Generative AI
 
@@ -113,11 +114,12 @@ Other Lightweight Model Options
 In general, larger models provide better performance but require more resources.
 If your resources allow it, I recommend testing Llama2-7B.
 
-To load the *Qwen2.5:0.5b* model , simply run the following command: 
+To load the *Qwen2.5:0.5b* and *mxbai-embed-large* model , simply run the following command: 
 
  
 ```bash
 ollama pull qwen2.5:0.5b
+ollama pull mxbai-embed-large
 
 ```
 
@@ -149,7 +151,7 @@ CREATE DATABASE health;
 CREATE TABLE pathologies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) UNIQUE,
-    embedding VECTOR(896) 
+    embedding VECTOR(10000) 
 ) TABLESPACE health_ts;
 
 
@@ -166,7 +168,7 @@ CREATE TABLE medicationv (
     pregnancy_or_breast_feeding TEXT,
     package_label_principal_display_panel TEXT,
     indications_and_usage TEXT,
-    embedding VECTOR(896),  
+    embedding VECTOR(10000),  
     CONSTRAINT fk_pathologie FOREIGN KEY (pathologie_id) REFERENCES pathologies(id)
 ) TABLESPACE health_ts;
 
@@ -207,9 +209,14 @@ Example config.json:
     "pathologie": {
         "file": "config/pathologies.json"
     },
-    "model": {
-        "name": "qwen2.5:0.5b",
-        "prompt": "Please analyze the medications listed below and recommend..."
+     "models": {
+        "generation": {
+            "name": "qwen2.5:0.5b",
+            "prompt": "Analyze the following list of medications related to this pathology. Recommend at least two that best fit the patient’s condition. For each, include:\n- Drug Name\n- Indications\n- Dosage\n- Any important warnings or considerations\n\nFocus on safety and efficacy."
+        },
+        "embedding": {
+            "name": "mxbai-embed-large:latest"
+          }
     },
     "chatbotport": {
         "port": 3001
@@ -261,10 +268,15 @@ Run the following command to automatically install all the required modules base
 ```bash
 
 :> go run importdbv.go
-Import Data...✅ Tables pathologies and medicationv have been cleared.
-2025/04/01 15:30:15 ✅ Import completed in 00:03:00
-2025/04/01 15:30:15 ✅ Data inserted successfully.
 
+INFO[2025-04-08 14:22:53] ✅ Config Loaded                              
+INFO[2025-04-08 14:22:53] ✅ Model use for Embedding generation: mxbai-embed-large:latest 
+
+INFO[2025-04-08 14:22:53] ✅ Pathologies Loaded                         
+INFO[2025-04-08 14:22:53] ✅ Tables pathologies and medicationv have been cleared. 
+INFO[2025-04-08 14:26:46] ✅ Data inserted successfully.                
+
+INFO[2025-04-08 14:26:46] ✅ Import completed in 00:03:52   
 ```
 
 ✅ Run chatbot :
@@ -272,7 +284,7 @@ Import Data...✅ Tables pathologies and medicationv have been cleared.
 ```bash
 
 :> go run go-mysql-ai.go
-INFO[0000] ✅ HTTP service started on port 3001
+INFO[2025-04-08 16:06:21] ✅ HTTP service started on port 3001   
 ```
 
 By default, the chatbot is bound to port 3001. You can change the port either in the configuration file (conf/config.json) under the entry *Chatbotport*, or by specifying the port on the command line with the parameter *-port Your_Port*.
@@ -298,7 +310,7 @@ In this demonstration, we showcase how to enhance the knowledge of a large langu
 
 ### Future Features
 
-Implement the **mxbai-embed-large** model to work directly with embeddings.
+Test the various models ...
 
 ---
 
