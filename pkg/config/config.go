@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Config struct {
@@ -16,10 +18,15 @@ type Config struct {
 	Pathologie struct {
 		File string `json:"file"`
 	} `json:"pathologie"`
-	Model struct {
-		Name   string `json:"name"`
-		Prompt string `json:"prompt"`
-	} `json:"model"`
+	Models struct {
+		Embedding struct {
+			Name string `json:"name"`
+		} `json:"embedding"`
+		Generation struct {
+			Name   string `json:"name"`
+			Prompt string `json:"prompt"`
+		} `json:"generation"`
+	} `json:"models"`
 	Chatbotport struct {
 		Port int `json:"port"`
 	} `json:"chatbotport"`
@@ -33,6 +40,16 @@ type PathologyDetail struct {
 
 type Pathology struct {
 	Pathologies map[string]PathologyDetail `json:"pathologies"`
+}
+
+var Log = logrus.New()
+
+func InitLogger() {
+	Log.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05",
+	})
+
 }
 
 func LoadConfig(filename string) (*Config, error) {

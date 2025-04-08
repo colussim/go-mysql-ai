@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
+	configPkg "github.com/colussim/go-mysql-ai/pkg/config"
 	"github.com/colussim/go-mysql-ai/pkg/tools"
 
 	"github.com/briandowns/spinner"
@@ -23,22 +23,23 @@ func formatDuration(duration time.Duration) string {
 
 func main() {
 
+	configPkg.InitLogger()
+
 	spin := spinner.New(spinner.CharSets[35], 100*time.Millisecond)
-	spin.Suffix = " Import Data..."
-	spin.Color("green", "bold")
-	spin.Start()
 	startTime := time.Now()
 
-	err := tools.RunImport("config/config.json")
+	err := tools.RunImport("config/config.json", spin)
 	if err != nil {
-		log.Fatalf("❌ Error Import Data : %v", err)
 		spin.Stop()
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error Import Data : %v", err)
+
 		os.Exit(1)
 	}
 
 	spin.Stop()
 	duration := time.Since(startTime)
+	fmt.Println()
+	configPkg.Log.Infof("✅ Import completed in %s\n", formatDuration(duration))
 
-	log.Printf("✅ Import completed in %s\n", formatDuration(duration))
-	log.Println("✅ Data inserted successfully.")
 }

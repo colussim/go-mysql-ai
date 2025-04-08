@@ -9,9 +9,14 @@
     "pathologie": {
         "file": "config/pathologies.json"
     },
-    "model": {
-        "name": "qwen2.5:0.5b",
-         "prompt": "Please analyze the medications listed below and recommend at least two for this pathology, displaying dosage and indications."
+    "models": {
+        "generation": {
+            "name": "qwen2.5:0.5b",
+            "prompt": "Analyze the following list of medications related to this pathology. Recommend at least two that best fit the patient’s condition. For each, include:\n- Drug Name\n- Indications\n- Dosage\n- Any important warnings or considerations\n\nFocus on safety and efficacy."
+             },
+        "embedding": {
+            "name": "mxbai-embed-large"
+          }
     },
     "chatbotport": {
         "port": 3001

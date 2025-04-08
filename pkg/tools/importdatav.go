@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/briandowns/spinner"
 	configPkg "github.com/colussim/go-mysql-ai/pkg/config"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ollama/ollama/api"
@@ -43,6 +44,7 @@ var (
 
 func generateEmbedding(text, model string) []float64 {
 
+	configPkg.InitLogger()
 	// Get the Ollama host from the environment variable or use the default local host
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
@@ -53,16 +55,22 @@ func generateEmbedding(text, model string) []float64 {
 	// Create a new Ollama client with the local host
 	client := api.NewClient(url, http.DefaultClient)
 
-	// Use the qwen2.5:0.5b model to generate embeddings
+	// Use the mxbai-embed-large:latest model to generate embeddings
 
 	req := &api.EmbeddingRequest{
 		Model:  model,
 		Prompt: text,
 	}
+	subSpinner1 := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	subSpinner1.Prefix = "           Embedding generation... "
+	subSpinner1.Start()
 	resp, err := client.Embeddings(context.Background(), req)
 	if err != nil {
-		log.Fatalln("❌ Error generating embedding:", err)
+		subSpinner1.Stop()
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error generating embedding: %v", err)
 	}
+	subSpinner1.Stop()
 
 	return resp.Embedding
 
@@ -126,18 +134,25 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 		return fmt.Errorf("❌ Error converting pathology embedding to string: %w", err)
 	}
 
+	subSpinner1 := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	subSpinner1.Prefix = "           INSERT INTO pathologies... "
+	subSpinner1.Start()
 	size := len(pathologyEmbeddingString)
 	// Insert vector using STRING_TO_VECTOR
 	_, err = db.Exec("INSERT INTO pathologies (name, embedding) VALUES (?, STRING_TO_VECTOR(?))", pathology, pathologyEmbeddingString)
 	if err != nil {
+		subSpinner1.Stop()
 		return fmt.Errorf("❌ Error inserting into pathologies table: %w - size vector %d: ", err, size)
 	}
+	subSpinner1.Stop()
 
+	subSpinner1.Prefix = "           INSERT INTO medicationv... "
 	var pathologyID int
 	err = db.QueryRow("SELECT id FROM pathologies WHERE name = ?", pathology).Scan(&pathologyID)
 	if err != nil {
 		return fmt.Errorf("❌ Error fetching pathology ID: %w", err)
 	}
+	subSpinner1.Start()
 
 	for _, result := range data.Results {
 		if len(result.OpenFDA.BrandName) == 0 {
@@ -146,7 +161,7 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 
 		medicament := result.OpenFDA.BrandName[0]
 
-		// Récupération et concaténation des informations
+		// Information retrieval and concatenation
 		indications := strings.Join(result.IndicationsAndUsage, ". ")
 		purpose := strings.Join(result.Purpose, ". ")
 
@@ -170,7 +185,7 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 		)
 
 		medEmbedding := generateEmbedding(text, model)
-		// Convertir le slice en string
+		// CConvert slice to string
 		medEmbeddingString, err := float64SliceToString(medEmbedding)
 
 		size := len(pathologyEmbeddingString)
@@ -208,9 +223,11 @@ func InsertData(db *sql.DB, pathology string, details configPkg.PathologyDetail,
 			medEmbeddingString,
 		)
 		if err != nil {
+			subSpinner1.Stop()
 			return fmt.Errorf("❌ Error inserting medication data: %w - size vector %d: ", err, size)
 		}
 	}
+	subSpinner1.Stop()
 	return nil
 }
 
@@ -227,50 +244,90 @@ func initDatabase(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("❌ Error deleting data from pathologies table: %w", err)
 	}
-
-	fmt.Println("✅ Tables pathologies and medicationv have been cleared.")
 	return nil
 }
 
-func RunImport(configPath string) error {
+func RunImport(configPath string, spin *spinner.Spinner) error {
+
+	configPkg.InitLogger()
+
+	spin.Suffix = " Load Config..."
+	spin.Color("green", "bold")
+	spin.Start()
+
 	config, err := configPkg.LoadConfig(configPath)
 	if err != nil {
-		fmt.Println("❌ Error reading config file:", err)
+		spin.Stop()
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error reading config file: %v", err)
 		return err
 	}
+	spin.Stop()
+
+	fmt.Println()
+	fmt.Println()
+	configPkg.Log.Infof("✅ Config Loaded \n")
+	configPkg.Log.Infof("✅ Model use for Embedding generation: %s\n", config.Models.Embedding.Name)
+	fmt.Println()
+
+	spin.Suffix = " Load Pathologies..."
+	spin.Start()
 	pathologies, err := configPkg.LoadPathologies(config.Pathologie.File)
 	if err != nil {
-		fmt.Println("❌ Error parsing JSON contents of file pathologies:", err)
+		spin.Stop()
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error parsing JSON contents of file pathologies: %v", err)
 		return err
 	}
+
+	spin.Stop()
+	configPkg.Log.Infof("✅ Pathologies Loaded \n")
+
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/health", config.MySQL.User, config.MySQL.Password, config.MySQL.Server, config.MySQL.Port)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		fmt.Println("❌ Error connecting to MySQL:", err)
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error connecting to MySQL: %v", err)
 		return err
 	}
 	defer db.Close()
 
+	spin.Suffix = " Init Database..."
+	spin.Start()
+
 	// Initialize the database by clearing the tables
 	err = initDatabase(db)
 	if err != nil {
-		fmt.Println("❌ Error initializing database:", err)
+		spin.Stop()
+		fmt.Println()
+		configPkg.Log.Fatalf("❌ Error initializing database: %v", err)
 		return err
 	}
+	spin.Stop()
+	configPkg.Log.Infof("✅ Tables pathologies and medicationv have been cleared.")
+
+	spin.Suffix = " Insert Drug and Pathologies in DB ...\n"
+	spin.Start()
 
 	for pathology := range pathologies.Pathologies {
 		data, err := fetchMedications(pathology)
 		if err != nil {
-			fmt.Println("❌ Error fetching medications for pathology:", pathology, err)
+			spin.Stop()
+			fmt.Println()
+			configPkg.Log.Fatalf("❌ Error fetching medications for pathology: %s - %v", pathology, err)
 			continue
 		}
 		details := pathologies.Pathologies[pathology]
 
-		err = InsertData(db, pathology, details, data, config.Model.Name)
+		err = InsertData(db, pathology, details, data, config.Models.Generation.Name)
 		if err != nil {
-			fmt.Println("❌ Error inserting data for pathology:", pathology, err)
+			spin.Stop()
+			fmt.Println()
+			configPkg.Log.Fatalf("❌ Error inserting data for pathology: %s - %v", pathology, err)
 		}
 	}
+	spin.Stop()
+	configPkg.Log.Infof("✅ Data inserted successfully.")
 
 	return nil
 }

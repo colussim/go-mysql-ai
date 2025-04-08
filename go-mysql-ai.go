@@ -22,7 +22,6 @@ import (
 	md "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
 	"github.com/ollama/ollama/api"
-	"github.com/sirupsen/logrus"
 )
 
 type TemplateData struct {
@@ -57,7 +56,6 @@ type Medication struct {
 // Main html page: index.html
 var tpl = template.Must(template.ParseFiles("dist/templates/chat.html"))
 
-var logger *logrus.Logger
 var db *sql.DB
 var pathology *configPkg.Pathology
 var config *configPkg.Config
@@ -95,7 +93,7 @@ func initDB(config *configPkg.Config) error {
 		return fmt.Errorf("❌ Database connection error: %w", err)
 	}
 
-	// Vérifiez la connexion
+	// check connexion
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("❌ Error verifying database connection: %w", err)
 	}
@@ -117,18 +115,21 @@ func extractPathology(input string) string {
 
 func sendJSONResponse(w http.ResponseWriter, response Response) {
 	w.Header().Set("Content-Type", "application/json")
+
+	configPkg.InitLogger()
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
-		log.Printf("❌ Error encoding response: %v", err)
+		configPkg.Log.Fatalf("❌ Error encoding response: %v", err)
 		http.Error(w, "❌ Error encoding response", http.StatusInternalServerError)
 	}
 }
 
 func sendJSONResponse2(w http.ResponseWriter, response Response1) {
 	w.Header().Set("Content-Type", "application/json")
+	configPkg.InitLogger()
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
-		log.Printf("❌ Error encoding response: %v", err)
+		configPkg.Log.Fatalf("❌ Error encoding response: %v", err)
 		http.Error(w, "❌ Error encoding response", http.StatusInternalServerError)
 	}
 }
@@ -341,7 +342,7 @@ func buildPromptForOllama(pathology string, medications []Medication) string {
 			med.PackageLabel,
 		)
 	}
-	prompt += config.Model.Prompt
+	prompt += config.Models.Generation.Prompt
 	//prompt += "Please analyze the medications listed below and recommend at least two for this pathology, displaying dosage and indications."
 	return prompt
 }
@@ -378,9 +379,9 @@ func sendToOllama(medicaments []Medication, pathology string) (string, error) {
 	prompt := buildPromptForOllama(pathology, medicaments)
 
 	chatRequest := api.ChatRequest{
-		Model: config.Model.Name,
+		Model: config.Models.Generation.Name,
 		Messages: []api.Message{
-			{Role: "system", Content: "You are an expert pharmacist. Always respond in English."},
+			{Role: "system", Content: "You are a licensed and experienced pharmacist with a strong knowledge of drug interactions, indications, and proper dosages. Always respond in English, clearly and concisely."},
 			{Role: "user", Content: prompt},
 		},
 		Stream: func(b bool) *bool { return &b }(true),
@@ -402,18 +403,20 @@ func sendToOllama(medicaments []Medication, pathology string) (string, error) {
 func init() {
 	var err error
 
+	configPkg.InitLogger()
+
 	config, err = configPkg.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatal("❌ Error eading config file:", err)
+		configPkg.Log.Fatal("❌ Error eading config file:", err)
 	}
 	pathology, err = configPkg.LoadPathologies(config.Pathologie.File)
 	if err != nil {
-		logger.Fatal("❌ Error loading config pathologies:", err)
+		configPkg.Log.Fatal("❌ Error loading config pathologies:", err)
 	}
 
 	// Initialize database connection
 	if err := initDB(config); err != nil {
-		logger.Fatalf("❌ Error initializing database: %v", err)
+		configPkg.Log.Fatalf("❌ Error initializing database: %v", err)
 	}
 	httpPort = config.Chatbotport.Port
 }
@@ -430,8 +433,6 @@ func main() {
 		port = strconv.Itoa(httpPort)
 	}
 
-	logger = logrus.New()
-
 	fs := http.FileServer(http.Dir("dist"))
 
 	mux := http.NewServeMux()
@@ -443,14 +444,14 @@ func main() {
 		err := http.ListenAndServe(":"+port, mux)
 		if err != nil {
 			if opErr, ok := err.(*net.OpError); ok && opErr.Op == "listen" {
-				logger.Fatalf("❌ The port %s is already in use. Please use another port", port)
+				configPkg.Log.Fatalf("❌ The port %s is already in use. Please use another port", port)
 			} else {
-				logger.Fatalf("❌ Unexpected HTTP service startup error : %v", err)
+				configPkg.Log.Fatalf("❌ Unexpected HTTP service startup error : %v", err)
 			}
 		}
 
 	}()
-	logger.Infof("✅ HTTP service started on port %s\n", port)
+	configPkg.Log.Infof("✅ HTTP service started on port %s\n", port)
 	select {}
 
 }
